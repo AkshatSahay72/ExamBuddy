@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>ExamBuddy Setup</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+
+<div class="setup-container">
+
+<h1>ExamBuddy Mock Test</h1>
+
+<div class="setup-box">
+
+<label>Topic</label>
+<input id="topic" placeholder="Example: Machine Learning">
+
+<label>Number of Questions</label>
+<input id="num" type="number" value="10">
+
+<label>Difficulty</label>
+<select id="difficulty">
+
+<option value="easy">Easy</option>
+<option value="medium">Medium</option>
+<option value="hard">Hard</option>
+
+</select>
+
+<button onclick="startExam()">Start Exam</button>
+
+</div>
+
+</div>
+
+<script src="/static/setup.js"></script>
+
+</body>
+</html>
