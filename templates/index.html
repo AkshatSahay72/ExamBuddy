@@ -1,128 +1,59 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
 <meta charset="UTF-8">
 <title>ExamBuddy AI Mock Test</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
-
 <body>
 
-<!-- HEADER -->
-
 <header class="header">
-
-<div class="logo">
-EB
-</div>
-
+<div class="logo">EB</div>
 <h2>ExamBuddy AI Mock Test</h2>
-
 <div class="exam-info">
-
-<div class="answered">
-0 / 10 answered
+<div class="answered">0 / 10 answered</div>
+<div class="timer">Time Left: 30:00</div>
 </div>
-
-<div class="timer">
-⏱ Time Left: 30:00
-</div>
-
-</div>
-
 </header>
 
-
-<!-- MAIN LAYOUT -->
-
 <div class="container">
-
-<!-- QUESTION PANEL -->
-
 <div class="question-panel">
-
 <h3 id="questionNumber">Question 1 of 10</h3>
-
-<div class="question-box" id="questionText">
-Question will appear here
-</div>
-
-
-<div class="options" id="optionsContainer">
-</div>
-
-
+<div class="question-box" id="questionText">Question will appear here</div>
+<div class="options" id="optionsContainer"></div>
 <div class="nav-buttons">
-
-<button id="prevBtn">← Previous</button>
-
-<button id="nextBtn">Next →</button>
-
+<button id="prevBtn">Previous</button>
+<button id="nextBtn">Next</button>
 </div>
-
 </div>
-
-
-<!-- QUESTION NAVIGATOR -->
 
 <div class="navigator">
-
 <h3>Question Navigator</h3>
-
-<div id="navigatorGrid" class="navigator-grid">
-
-</div>
-
+<div id="navigatorGrid" class="navigator-grid"></div>
 <div class="legend">
-
-<span class="legend-current"></span> Current  
-<span class="legend-answered"></span> Answered  
-<span class="legend-review"></span> Review  
-<span class="legend-not"></span> Not Answered  
-
+<span class="legend-current"></span> Current
+<span class="legend-answered"></span> Answered
+<span class="legend-review"></span> Review
+<span class="legend-not"></span> Not Answered
+</div>
+</div>
 </div>
 
-</div>
-
-</div>
-
-
-<!-- FLOATING SUBMIT -->
-
-<button class="submit-btn" onclick="submitExam()">
-Submit Exam
-</button>
-
-
-<!-- CHATBOT -->
+<button class="submit-btn" onclick="submitExam()">Submit Exam</button>
 
 <div class="chatbot">
-
-<button class="chat-toggle" onclick="toggleChat()">💬</button>
-
+<button class="chat-toggle" onclick="toggleChat()" aria-label="Open chat">Help</button>
 <div id="chatWindow" class="chat-window">
-
-<div class="chat-header">
-AI Help Assistant
-</div>
-
+<div class="chat-header">AI Help Assistant</div>
+<div id="chatMeta" class="chat-meta">Question help</div>
 <div id="chatMessages" class="chat-messages"></div>
-
 <div class="chat-input-area">
-
 <input id="chatInput" placeholder="Ask a doubt...">
-
-<button onclick="sendMessage()">Send</button>
-
+<button id="chatSendBtn" onclick="sendMessage()">Send</button>
 </div>
-
 </div>
-
 </div>
 
 <script src="/static/script.js"></script>
-
 </body>
-
 </html>

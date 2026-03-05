@@ -1,40 +1,40 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ExamBuddy Setup</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
+<body class="setup-page">
+<main class="setup-shell">
+<section class="setup-hero">
+<p class="setup-tag">Mock Test Builder</p>
+<h1>Build a focused practice test in under 30 seconds</h1>
+<p>Choose your topic, question count, and difficulty. ExamBuddy will generate an MCQ set with explanations and instant feedback.</p>
+</section>
 
-<body>
+<form class="setup-card" onsubmit="startExam(event)">
+<h2>Start New Test</h2>
 
-<div class="setup-container">
+<label for="topic">Topic</label>
+<input id="topic" placeholder="Example: Machine Learning" required>
 
-<h1>ExamBuddy Mock Test</h1>
+<label for="num">Number of Questions</label>
+<input id="num" type="number" min="3" max="30" value="10" required>
 
-<div class="setup-box">
-
-<label>Topic</label>
-<input id="topic" placeholder="Example: Machine Learning">
-
-<label>Number of Questions</label>
-<input id="num" type="number" value="10">
-
-<label>Difficulty</label>
+<label for="difficulty">Difficulty</label>
 <select id="difficulty">
-
 <option value="easy">Easy</option>
-<option value="medium">Medium</option>
+<option value="medium" selected>Medium</option>
 <option value="hard">Hard</option>
-
 </select>
 
-<button onclick="startExam()">Start Exam</button>
-
-</div>
-
-</div>
+<p id="setupError" class="setup-error"></p>
+<button id="startBtn" type="submit">Generate Test</button>
+</form>
+</main>
 
 <script src="/static/setup.js"></script>
-
 </body>
 </html>
