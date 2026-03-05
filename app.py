@@ -144,6 +144,37 @@ def is_question_related(user_query, question_context):
     return False
 
 
+def normalize_exam_topic(topic):
+    raw = (topic or "").strip()
+    if not raw:
+        return raw
+
+    compact = re.sub(r"[^a-z0-9]+", " ", raw.lower()).strip()
+    if "gate" not in compact:
+        return raw
+
+    gate_paper_aliases = {
+        "da": "Data Science and Artificial Intelligence (DA)",
+        "ece": "Electronics and Communication Engineering (EC)",
+        "cse": "Computer Science and Information Technology (CS)",
+        "cs": "Computer Science and Information Technology (CS)",
+        "ee": "Electrical Engineering (EE)",
+        "me": "Mechanical Engineering (ME)",
+        "ce": "Civil Engineering (CE)"
+    }
+
+    tokens = compact.split()
+    for token in tokens:
+        if token in gate_paper_aliases:
+            return f"GATE {gate_paper_aliases[token]}"
+
+    joined = " ".join(tokens)
+    if "data science" in joined or "artificial intelligence" in joined:
+        return "GATE Data Science and Artificial Intelligence (DA)"
+
+    return raw
+
+
 # -----------------------------
 # ROUTES
 # -----------------------------
@@ -171,12 +202,16 @@ def generate():
         data = request.json or {}
 
         topic = data.get("topic", "Data Structures")
+        normalized_topic = normalize_exam_topic(topic)
         num = max(3, min(int(data.get("num", 5)), 30))
         difficulty = data.get("difficulty", "medium")
 
         base_prompt = f"""
-Generate {num} MCQ questions about {topic}.
+Generate {num} MCQ questions about {normalized_topic}.
 Difficulty: {difficulty}
+
+If this is a GATE paper code/topic, strictly stay within that paper's syllabus.
+Do not switch to another GATE branch.
 
 Return ONLY JSON in this format:
 
@@ -319,4 +354,7 @@ def chat():
 # -----------------------------
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    debug_mode = os.getenv("FLASK_DEBUG", "0") == "1"
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "5000"))
+    app.run(debug=debug_mode, host=host, port=port)

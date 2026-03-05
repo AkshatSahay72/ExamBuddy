@@ -33,6 +33,37 @@ function stripEmojis(text) {
     return text.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "").trim()
 }
 
+function stripOptionPrefix(text) {
+    const value = (text || "").toString().trim()
+    return value
+        .replace(/^(?:option\s*)?[A-Da-d]\s*[\)\].:\-]\s*/i, "")
+        .replace(/^\(?[1-4]\)?\s*[\)\].:\-]\s*/i, "")
+        .trim()
+}
+
+function getAnswerLetter(answerText) {
+    const match = (answerText || "").toString().trim().match(/^(?:option\s*)?([A-Da-d])(?:\b|[\)\].:\-])/i)
+    return match ? match[1].toUpperCase() : null
+}
+
+function isCorrectSelection(selectedOption, question) {
+    const rawAnswer = (question && question.answer ? String(question.answer) : "").trim()
+    const rawSelected = (selectedOption || "").toString().trim()
+    if (!rawAnswer || !rawSelected) return false
+
+    if (rawSelected === rawAnswer) return true
+
+    const selectedClean = stripOptionPrefix(rawSelected).toLowerCase()
+    const answerClean = stripOptionPrefix(rawAnswer).toLowerCase()
+    if (selectedClean && selectedClean === answerClean) return true
+
+    const answerLetter = getAnswerLetter(rawAnswer)
+    if (!answerLetter || !Array.isArray(question.options)) return false
+
+    const answerIndex = answerLetter.charCodeAt(0) - 65
+    return question.options[answerIndex] === selectedOption
+}
+
 function appendChatMessage(role, content, persist = true) {
     const chatBox = document.getElementById("chatMessages")
     if (!chatBox) return
@@ -176,7 +207,8 @@ function showQuestion() {
     q.options.forEach((opt, index) => {
         const div = document.createElement("div")
         div.classList.add("option")
-        div.innerHTML = `<b>${String.fromCharCode(65 + index)}</b> ${opt}`
+        div.dataset.optionValue = opt
+        div.innerHTML = `<b>${String.fromCharCode(65 + index)}</b> ${escapeHtml(stripOptionPrefix(opt))}`
 
         if (answers[currentQuestion] === opt) {
             div.style.border = "2px solid #3b6ef3"
@@ -200,7 +232,7 @@ function selectOption(opt) {
 
     options.forEach(o => {
         o.style.border = "1px solid #ddd"
-        if (o.innerText.includes(opt)) {
+        if (o.dataset.optionValue === opt) {
             o.style.border = "3px solid #3b6ef3"
         }
     })
@@ -212,19 +244,19 @@ function selectOption(opt) {
         document.querySelector(".question-panel").appendChild(feedback)
     }
 
-    if (opt === q.answer) {
+    if (isCorrectSelection(opt, q)) {
         feedback.innerHTML = `
 <div class="correct-box">
 Correct<br>
-${q.explanation}
+${escapeHtml(q.explanation || "")}
 </div>
 `
     } else {
         feedback.innerHTML = `
 <div class="wrong-box">
 Wrong<br>
-Correct answer: <b>${q.answer}</b><br>
-${q.explanation}
+Correct answer: <b>${escapeHtml(stripOptionPrefix(q.answer))}</b><br>
+${escapeHtml(q.explanation || "")}
 </div>
 `
     }
@@ -289,16 +321,18 @@ function submitExam() {
     let resultHTML = `<h2 class="result-title">Exam Results</h2>`
 
     questions.forEach((q, i) => {
-        const correct = answers[i] === q.answer
+        const correct = isCorrectSelection(answers[i], q)
         if (correct) score++
+        const userAnswer = answers[i] ? stripOptionPrefix(answers[i]) : "Not answered"
+        const correctAnswer = stripOptionPrefix(q.answer)
 
         resultHTML += `
 <div class="result-card ${correct ? "correct-card" : "wrong-card"}">
 <h3>Q${i + 1} ${correct ? "Correct" : "Wrong"}</h3>
-<p>${q.question}</p>
-<p><b>Your Answer:</b> ${answers[i] || "Not answered"}</p>
-<p><b>Correct:</b> ${q.answer}</p>
-<p class="explanation">${q.explanation}</p>
+<p>${escapeHtml(q.question || "")}</p>
+<p><b>Your Answer:</b> ${escapeHtml(userAnswer)}</p>
+<p><b>Correct:</b> ${escapeHtml(correctAnswer)}</p>
+<p class="explanation">${escapeHtml(q.explanation || "")}</p>
 </div>
 `
     })
