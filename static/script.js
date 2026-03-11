@@ -4,6 +4,7 @@ let currentQuestion = 0
 let totalQuestions = 0
 let isChatRequestInFlight = false
 let currentChatHistory = []
+let questionState = []
 
 window.onload = () => {
     generateTest()
@@ -15,6 +16,11 @@ window.onload = () => {
                 sendMessage()
             }
         })
+    }
+
+    const checkButton = document.getElementById("checkAnswerBtn")
+    if (checkButton) {
+        checkButton.addEventListener("click", checkAnswer)
     }
 }
 
@@ -64,6 +70,108 @@ function isCorrectSelection(selectedOption, question) {
     return question.options[answerIndex] === selectedOption
 }
 
+function getCorrectOptionValue(question) {
+    if (!question || !Array.isArray(question.options)) return null
+
+    const rawAnswer = (question.answer || "").toString().trim()
+    if (!rawAnswer) return null
+
+    const directMatch = question.options.find((opt) => {
+        if (opt === rawAnswer) return true
+        const optClean = stripOptionPrefix(opt).toLowerCase()
+        const ansClean = stripOptionPrefix(rawAnswer).toLowerCase()
+        return optClean && optClean === ansClean
+    })
+    if (directMatch) {
+        return directMatch
+    }
+
+    const answerLetter = getAnswerLetter(rawAnswer)
+    if (!answerLetter) return null
+
+    const idx = answerLetter.charCodeAt(0) - 65
+    return question.options[idx] || null
+}
+
+function getStateForQuestion(index) {
+    if (!Array.isArray(questionState) || !questionState[index]) return null
+    return questionState[index]
+}
+
+function getOrCreateFeedbackBox() {
+    let feedback = document.getElementById("feedbackBox")
+    if (!feedback) {
+        feedback = document.createElement("div")
+        feedback.id = "feedbackBox"
+        const panel = document.querySelector(".question-panel")
+        if (panel) {
+            panel.appendChild(feedback)
+        }
+    }
+    return feedback
+}
+
+function clearFeedback() {
+    const feedback = document.getElementById("feedbackBox")
+    if (feedback) {
+        feedback.innerHTML = ""
+    }
+}
+
+function renderFeedback(question, state) {
+    const feedback = getOrCreateFeedbackBox()
+    if (!state || !state.is_checked) {
+        feedback.innerHTML = ""
+        return
+    }
+
+    const selected = state.selected_option
+    const isCorrect = isCorrectSelection(selected, question)
+
+    if (isCorrect) {
+        feedback.innerHTML = `
+<div class="correct-box">
+Correct<br>
+${escapeHtml(question.explanation || "")}
+</div>
+`
+    } else {
+        feedback.innerHTML = `
+<div class="wrong-box">
+Wrong<br>
+Correct answer: <b>${escapeHtml(stripOptionPrefix(question.answer))}</b><br>
+${escapeHtml(question.explanation || "")}
+</div>
+`
+    }
+}
+
+function applyQuestionVisualState(question, state) {
+    const options = document.querySelectorAll("#optionsContainer .option")
+    options.forEach((o) => {
+        o.classList.remove("option-selected", "option-correct", "option-wrong")
+        const value = o.dataset.optionValue
+        if (state && state.selected_option === value) {
+            o.classList.add("option-selected")
+        }
+    })
+
+    if (!state || !state.is_checked) return
+
+    const correctValue = getCorrectOptionValue(question)
+    const selectedValue = state.selected_option
+
+    options.forEach((o) => {
+        const value = o.dataset.optionValue
+        if (value === correctValue) {
+            o.classList.add("option-correct")
+        }
+        if (value === selectedValue && value !== correctValue) {
+            o.classList.add("option-wrong")
+        }
+    })
+}
+
 function appendChatMessage(role, content, persist = true) {
     const chatBox = document.getElementById("chatMessages")
     if (!chatBox) return
@@ -104,12 +212,13 @@ function getCurrentQuestionContext() {
     if (!questions[currentQuestion]) return null
 
     const q = questions[currentQuestion]
+    const state = getStateForQuestion(currentQuestion)
     return {
         question_number: currentQuestion + 1,
         total_questions: totalQuestions,
         question: q.question,
         options: q.options,
-        selected_answer: answers[currentQuestion] || null,
+        selected_answer: state ? (state.selected_option || null) : (answers[currentQuestion] || null),
         correct_answer: q.answer,
         explanation: q.explanation
     }
@@ -183,6 +292,11 @@ async function generateTest() {
     }
 
     answers = new Array(totalQuestions).fill(null)
+    questionState = questions.map(() => ({
+        selected_option: null,
+        is_checked: false,
+        is_answered: false
+    }))
 
     buildNavigator()
     showQuestion()
@@ -196,6 +310,7 @@ function showQuestion() {
     }
 
     const q = questions[currentQuestion]
+    const state = getStateForQuestion(currentQuestion)
 
     document.getElementById("questionNumber").innerText =
         `Question ${currentQuestion + 1} of ${totalQuestions}`
@@ -209,14 +324,22 @@ function showQuestion() {
         div.classList.add("option")
         div.dataset.optionValue = opt
         div.innerHTML = `<b>${String.fromCharCode(65 + index)}</b> ${escapeHtml(stripOptionPrefix(opt))}`
-
-        if (answers[currentQuestion] === opt) {
-            div.style.border = "2px solid #3b6ef3"
-        }
-
         div.onclick = () => selectOption(opt)
         optionsContainer.appendChild(div)
     })
+
+    applyQuestionVisualState(q, state || null)
+
+    const checkButton = document.getElementById("checkAnswerBtn")
+    if (checkButton) {
+        if (!state || !state.selected_option || state.is_checked) {
+            checkButton.disabled = true
+        } else {
+            checkButton.disabled = false
+        }
+    }
+
+    renderFeedback(q, state || null)
 
     highlightNavigator()
     updateChatMeta()
@@ -225,40 +348,47 @@ function showQuestion() {
 }
 
 function selectOption(opt) {
-    answers[currentQuestion] = opt
-
     const q = questions[currentQuestion]
-    const options = document.querySelectorAll("#optionsContainer div")
-
-    options.forEach(o => {
-        o.style.border = "1px solid #ddd"
-        if (o.dataset.optionValue === opt) {
-            o.style.border = "3px solid #3b6ef3"
-        }
-    })
-
-    let feedback = document.getElementById("feedbackBox")
-    if (!feedback) {
-        feedback = document.createElement("div")
-        feedback.id = "feedbackBox"
-        document.querySelector(".question-panel").appendChild(feedback)
+    const state = getStateForQuestion(currentQuestion)
+    if (state && state.is_checked) {
+        return
     }
 
-    if (isCorrectSelection(opt, q)) {
-        feedback.innerHTML = `
-<div class="correct-box">
-Correct<br>
-${escapeHtml(q.explanation || "")}
-</div>
-`
-    } else {
-        feedback.innerHTML = `
-<div class="wrong-box">
-Wrong<br>
-Correct answer: <b>${escapeHtml(stripOptionPrefix(q.answer))}</b><br>
-${escapeHtml(q.explanation || "")}
-</div>
-`
+    answers[currentQuestion] = opt
+    if (state) {
+        state.selected_option = opt
+        state.is_answered = true
+    }
+
+    applyQuestionVisualState(q, state || null)
+    clearFeedback()
+
+    const checkButton = document.getElementById("checkAnswerBtn")
+    if (checkButton && state && !state.is_checked && state.selected_option) {
+        checkButton.disabled = false
+    }
+
+    updateAnswered()
+    highlightNavigator()
+}
+
+function checkAnswer() {
+    const q = questions[currentQuestion]
+    const state = getStateForQuestion(currentQuestion)
+    if (!q || !state || state.is_checked || !state.selected_option) {
+        return
+    }
+
+    state.is_checked = true
+    state.is_answered = true
+    answers[currentQuestion] = state.selected_option
+
+    applyQuestionVisualState(q, state)
+    renderFeedback(q, state)
+
+    const checkButton = document.getElementById("checkAnswerBtn")
+    if (checkButton) {
+        checkButton.disabled = true
     }
 
     updateAnswered()
@@ -301,10 +431,13 @@ function highlightNavigator() {
         grid[i].style.background = "#d9dee7"
         grid[i].style.color = "black"
 
+        const state = getStateForQuestion(i)
+        const isAnswered = state ? state.is_answered : answers[i] !== null
+
         if (i === currentQuestion) {
             grid[i].style.background = "#3b6ef3"
             grid[i].style.color = "white"
-        } else if (answers[i] !== null) {
+        } else if (isAnswered) {
             grid[i].style.background = "#2ecc71"
             grid[i].style.color = "white"
         }
@@ -312,7 +445,12 @@ function highlightNavigator() {
 }
 
 function updateAnswered() {
-    const count = answers.filter(a => a !== null).length
+    let count = 0
+    if (Array.isArray(questionState) && questionState.length) {
+        count = questionState.filter((s) => s && s.is_answered).length
+    } else {
+        count = answers.filter(a => a !== null).length
+    }
     document.querySelector(".answered").innerText = `${count} / ${totalQuestions} answered`
 }
 
