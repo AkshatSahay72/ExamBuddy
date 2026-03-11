@@ -209,26 +209,31 @@ def generate():
         difficulty = data.get("difficulty", "medium")
 
         base_prompt = f"""
-Generate {num} MCQ questions about {normalized_topic}.
-Difficulty: {difficulty}
+        Generate {num} multiple choice questions about {normalized_topic}.
+        Difficulty: {difficulty}
 
-If this is a GATE paper code/topic, strictly stay within that paper's syllabus.
-Do not switch to another GATE branch.
+        IMPORTANT RULES:
+        - Output must be STRICT VALID JSON.
+        - Do NOT write explanations outside JSON.
+        - Do NOT write headings.
+        - Do NOT number the questions.
+        - Do NOT use markdown.
+        - Do NOT use ```.
 
-Return ONLY JSON in this format:
+        Output format MUST be exactly:
 
-[
-{{
-"question":"text",
-"options":["A","B","C","D"],
-"answer":"correct option text",
-"explanation":"short explanation"
-}}
-]
-"""
+        [
+        {{
+            "question": "Question text",
+            "options": ["option1", "option2", "option3", "option4"],
+            "answer": "correct option text",
+            "explanation": "short explanation"
+        }}
+        ]
+        """
 
         last_error = None
-        for attempt in range(3):
+        for attempt in range(1):
             prompt = (
                 base_prompt
                 + "\nDo not include markdown, headings, or code fences."
@@ -237,7 +242,7 @@ Return ONLY JSON in this format:
                 prompt += "\nPrevious output was invalid. Return strict valid JSON only."
 
             completion = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                model="llama-3.3-70b-versatile",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2
             )
