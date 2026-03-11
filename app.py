@@ -106,39 +106,41 @@ def tokenize_text(text):
 
 
 def is_question_related(user_query, question_context):
+    # if no context yet, allow the question
     if not isinstance(question_context, dict) or not question_context:
-        return False
+        return True
 
     query = (user_query or "").strip().lower()
     if not query:
         return False
 
+    # build MCQ text
     mcq_parts = [
         str(question_context.get("question", "")),
         str(question_context.get("correct_answer", "")),
         str(question_context.get("selected_answer", "")),
         str(question_context.get("explanation", ""))
     ]
+
     options = question_context.get("options") or []
     if isinstance(options, list):
         mcq_parts.extend(str(opt) for opt in options)
 
     mcq_text = " ".join(mcq_parts).lower()
+
     mcq_tokens = tokenize_text(mcq_text)
     query_tokens = tokenize_text(query)
 
-    # Allow common direct MCQ phrasing even with low token overlap.
-    if re.search(r"\b(option|correct|wrong|answer|explain|why)\b", query):
-        if query_tokens & mcq_tokens:
-            return True
-
-    # Strong related signal: user mentions text present in the active MCQ.
-    overlap = query_tokens & mcq_tokens
-    if len(overlap) >= 1:
+    # strong signal: user directly mentions words from MCQ
+    if query_tokens & mcq_tokens:
         return True
 
-    # Short follow-ups that usually refer to current MCQ.
-    if len(query.split()) <= 5 and re.search(r"\b(why|how|this|that|not)\b", query):
+    # allow common exam help queries
+    if re.search(r"\b(option|correct|wrong|answer|explain|why|how)\b", query):
+        return True
+
+    # allow short conceptual questions (like "what is algorithm")
+    if len(query.split()) <= 6:
         return True
 
     return False
