@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ExamBuddy AI Mock Test</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
@@ -17,6 +18,7 @@
 </header>
 
 <div class="container">
+<div class="main-col">
 <div class="question-panel">
 <h3 id="questionNumber">Question 1 of 10</h3>
 <div class="question-box" id="questionText">Question will appear here</div>
@@ -30,21 +32,10 @@
 </div>
 </div>
 
-<div class="navigator">
-<h3>Question Navigator</h3>
-<div id="navigatorGrid" class="navigator-grid"></div>
-<div class="legend">
-<span class="legend-current"></span> Current
-<span class="legend-answered"></span> Answered
-<span class="legend-not"></span> Not Answered
-</div>
-</div>
-</div>
-
+<div class="exam-footer">
 <button class="submit-btn" onclick="submitExam()">Submit Exam</button>
 
 <div class="chatbot">
-<button class="chat-toggle" onclick="toggleChat()" aria-label="Open chat">Help</button>
 <div id="chatWindow" class="chat-window">
 <div class="chat-header">AI Help Assistant</div>
 <div id="chatMeta" class="chat-meta">Question help</div>
@@ -52,6 +43,20 @@
 <div class="chat-input-area">
 <input id="chatInput" placeholder="Ask a doubt...">
 <button id="chatSendBtn" onclick="sendMessage()">Send</button>
+</div>
+</div>
+<button class="chat-toggle" onclick="toggleChat()" aria-label="Open chat">Help</button>
+</div>
+</div>
+</div>
+
+<div class="navigator">
+<h3>Question Navigator</h3>
+<div id="navigatorGrid" class="navigator-grid"></div>
+<div class="legend">
+<span class="legend-current"></span> Current
+<span class="legend-answered"></span> Answered
+<span class="legend-not"></span> Not Answered
 </div>
 </div>
 </div>
