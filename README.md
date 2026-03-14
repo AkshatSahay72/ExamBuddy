@@ -2,7 +2,7 @@
 
 AI-powered mock test generator for exam preparation. Build topic-specific MCQ tests, get instant correctness feedback, and ask focused doubt-clearing questions on the active MCQ.
 
-Live Demo: https://exambuddy-78un.onrender.com/
+Live Demo: https://exam-buddy-sand.vercel.app
 
 ## Highlights
 - Generate MCQ tests by `topic`, `difficulty`, and `question count`.
