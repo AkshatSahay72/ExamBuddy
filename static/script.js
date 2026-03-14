@@ -22,6 +22,102 @@ window.onload = () => {
     if (checkButton) {
         checkButton.addEventListener("click", checkAnswer)
     }
+
+    makeChatMovable()
+}
+
+// Drag functionality variables
+let isChatDragging = false;
+
+function makeChatMovable() {
+    const chatbot = document.querySelector(".chatbot");
+    const handles = [document.querySelector(".chat-toggle"), document.querySelector(".chat-header")];
+    
+    if (!chatbot) return;
+
+    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+
+    handles.forEach(handle => {
+        if (!handle) return;
+        handle.onmousedown = dragMouseDown;
+        handle.ontouchstart = dragTouchStart;
+        handle.style.cursor = "grab";
+    });
+
+    function makeFixedIfInline() {
+        const style = window.getComputedStyle(chatbot);
+        if (style.position !== "fixed" && style.position !== "absolute") {
+            const rect = chatbot.getBoundingClientRect();
+            // Assign fixed positioning without jumping
+            chatbot.style.position = "fixed";
+            chatbot.style.left = rect.left + "px";
+            chatbot.style.top = rect.top + "px";
+            chatbot.style.right = "auto";
+            chatbot.style.bottom = "auto";
+            chatbot.style.margin = "0";
+            chatbot.style.width = rect.width + "px"; // preserve width to avoid collapse
+        }
+    }
+
+    function dragMouseDown(e) {
+        e.preventDefault();
+        isChatDragging = false;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        document.onmouseup = closeDragElement;
+        document.onmousemove = elementDrag;
+        handles.forEach(h => h && (h.style.cursor = "grabbing"));
+    }
+
+    function elementDrag(e) {
+        e.preventDefault();
+        isChatDragging = true;
+        makeFixedIfInline();
+        
+        pos1 = pos3 - e.clientX;
+        pos2 = pos4 - e.clientY;
+        pos3 = e.clientX;
+        pos4 = e.clientY;
+        
+        chatbot.style.top = (chatbot.offsetTop - pos2) + "px";
+        chatbot.style.left = (chatbot.offsetLeft - pos1) + "px";
+    }
+
+    function dragTouchStart(e) {
+        isChatDragging = false;
+        const touch = e.touches[0];
+        pos3 = touch.clientX;
+        pos4 = touch.clientY;
+        document.ontouchend = closeDragElement;
+        document.ontouchmove = elementDragTouch;
+    }
+
+    function elementDragTouch(e) {
+        isChatDragging = true;
+        makeFixedIfInline();
+
+        const touch = e.touches[0];
+        pos1 = pos3 - touch.clientX;
+        pos2 = pos4 - touch.clientY;
+        pos3 = touch.clientX;
+        pos4 = touch.clientY;
+        
+        chatbot.style.top = (chatbot.offsetTop - pos2) + "px";
+        chatbot.style.left = (chatbot.offsetLeft - pos1) + "px";
+    }
+
+    function closeDragElement() {
+        document.onmouseup = null;
+        document.onmousemove = null;
+        document.ontouchend = null;
+        document.ontouchmove = null;
+        handles.forEach(h => h && (h.style.cursor = "grab"));
+        
+        // short timeout so click event can detect if it was dragged
+        setTimeout(() => {
+            isChatDragging = false;
+        }, 50);
+    }
 }
 
 function escapeHtml(text) {
@@ -512,6 +608,8 @@ setInterval(() => {
 }, 1000)
 
 function toggleChat() {
+    if (isChatDragging) return; // Prevent toggle if user is dragging it
+    
     const chat = document.getElementById("chatWindow")
     chat.style.display = chat.style.display === "flex" ? "none" : "flex"
     if (chat.style.display === "flex") {
