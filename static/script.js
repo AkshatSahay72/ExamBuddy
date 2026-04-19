@@ -2,121 +2,34 @@ let questions = []
 let answers = []
 let currentQuestion = 0
 let totalQuestions = 0
-let isChatRequestInFlight = false
-let currentChatHistory = []
 let questionState = []
+let isHintRequestInFlight = false
 
 window.onload = () => {
     generateTest()
-    const chatInput = document.getElementById("chatInput")
-    if (chatInput) {
-        chatInput.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                event.preventDefault()
-                sendMessage()
-            }
-        })
-    }
 
     const checkButton = document.getElementById("checkAnswerBtn")
     if (checkButton) {
         checkButton.addEventListener("click", checkAnswer)
     }
 
-    makeChatMovable()
-}
-
-// Drag functionality variables
-let isChatDragging = false;
-
-function makeChatMovable() {
-    const chatbot = document.querySelector(".chatbot");
-    const handles = [document.querySelector(".chat-toggle"), document.querySelector(".chat-header")];
-    
-    if (!chatbot) return;
-
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-
-    handles.forEach(handle => {
-        if (!handle) return;
-        handle.onmousedown = dragMouseDown;
-        handle.ontouchstart = dragTouchStart;
-        handle.style.cursor = "grab";
-    });
-
-    function makeFixedIfInline() {
-        const style = window.getComputedStyle(chatbot);
-        if (style.position !== "fixed" && style.position !== "absolute") {
-            const rect = chatbot.getBoundingClientRect();
-            // Assign fixed positioning without jumping
-            chatbot.style.position = "fixed";
-            chatbot.style.left = rect.left + "px";
-            chatbot.style.top = rect.top + "px";
-            chatbot.style.right = "auto";
-            chatbot.style.bottom = "auto";
-            chatbot.style.margin = "0";
-            chatbot.style.width = rect.width + "px"; // preserve width to avoid collapse
-        }
+    const hintBtn = document.getElementById("hintBtn")
+    if (hintBtn) {
+        hintBtn.addEventListener("click", generateHint)
     }
 
-    function dragMouseDown(e) {
-        e.preventDefault();
-        isChatDragging = false;
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        document.onmouseup = closeDragElement;
-        document.onmousemove = elementDrag;
-        handles.forEach(h => h && (h.style.cursor = "grabbing"));
+    const doubtInput = document.getElementById("doubtInput")
+    const doubtAskBtn = document.getElementById("doubtAskBtn")
+    if (doubtAskBtn) {
+        doubtAskBtn.addEventListener("click", askDoubt)
     }
-
-    function elementDrag(e) {
-        e.preventDefault();
-        isChatDragging = true;
-        makeFixedIfInline();
-        
-        pos1 = pos3 - e.clientX;
-        pos2 = pos4 - e.clientY;
-        pos3 = e.clientX;
-        pos4 = e.clientY;
-        
-        chatbot.style.top = (chatbot.offsetTop - pos2) + "px";
-        chatbot.style.left = (chatbot.offsetLeft - pos1) + "px";
-    }
-
-    function dragTouchStart(e) {
-        isChatDragging = false;
-        const touch = e.touches[0];
-        pos3 = touch.clientX;
-        pos4 = touch.clientY;
-        document.ontouchend = closeDragElement;
-        document.ontouchmove = elementDragTouch;
-    }
-
-    function elementDragTouch(e) {
-        isChatDragging = true;
-        makeFixedIfInline();
-
-        const touch = e.touches[0];
-        pos1 = pos3 - touch.clientX;
-        pos2 = pos4 - touch.clientY;
-        pos3 = touch.clientX;
-        pos4 = touch.clientY;
-        
-        chatbot.style.top = (chatbot.offsetTop - pos2) + "px";
-        chatbot.style.left = (chatbot.offsetLeft - pos1) + "px";
-    }
-
-    function closeDragElement() {
-        document.onmouseup = null;
-        document.onmousemove = null;
-        document.ontouchend = null;
-        document.ontouchmove = null;
-        handles.forEach(h => h && (h.style.cursor = "grab"));
-        
-        // short timeout so click event can detect if it was dragged
-        setTimeout(() => {
-            isChatDragging = false;
-        }, 50);
+    if (doubtInput) {
+        doubtInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault()
+                askDoubt()
+            }
+        })
     }
 }
 
@@ -246,9 +159,11 @@ function applyQuestionVisualState(question, state) {
     const options = document.querySelectorAll("#optionsContainer .option")
     options.forEach((o) => {
         o.classList.remove("option-selected", "option-correct", "option-wrong")
+        o.setAttribute("aria-checked", "false")
         const value = o.dataset.optionValue
         if (state && state.selected_option === value) {
             o.classList.add("option-selected")
+            o.setAttribute("aria-checked", "true")
         }
     })
 
@@ -268,55 +183,233 @@ function applyQuestionVisualState(question, state) {
     })
 }
 
-function appendChatMessage(role, content, persist = true) {
-    const chatBox = document.getElementById("chatMessages")
-    if (!chatBox) return
-
-    const cleanContent = stripEmojis(content || "")
-    if (!cleanContent) return
-    const safeContent = escapeHtml(cleanContent)
-
-    const cls = role === "user" ? "user-msg" : "bot-msg"
-    chatBox.innerHTML += `<div class="${cls}">${safeContent}</div>`
-    chatBox.scrollTop = chatBox.scrollHeight
-
-    if (!persist) return
-    currentChatHistory.push({ role, content: cleanContent })
-}
-
-function renderChatForCurrentQuestion() {
-    const chatBox = document.getElementById("chatMessages")
-    if (!chatBox) return
-    chatBox.innerHTML = ""
-
-    currentChatHistory.forEach((msg) => {
-        const cls = msg.role === "user" ? "user-msg" : "bot-msg"
-        chatBox.innerHTML += `<div class="${cls}">${escapeHtml(msg.content || "")}</div>`
-    })
-    chatBox.scrollTop = chatBox.scrollHeight
-}
-
-function updateChatMeta() {
-    const meta = document.getElementById("chatMeta")
-    if (!meta) return
-    meta.innerText = totalQuestions > 0
-        ? `Question ${currentQuestion + 1} help`
-        : "General help"
-}
-
 function getCurrentQuestionContext() {
     if (!questions[currentQuestion]) return null
 
     const q = questions[currentQuestion]
     const state = getStateForQuestion(currentQuestion)
+    const isChecked = !!(state && state.is_checked)
+    const isAnswered = !!(state && state.is_answered)
     return {
         question_number: currentQuestion + 1,
         total_questions: totalQuestions,
         question: q.question,
         options: q.options,
         selected_answer: state ? (state.selected_option || null) : (answers[currentQuestion] || null),
-        correct_answer: q.answer,
-        explanation: q.explanation
+        is_checked: isChecked,
+        is_answered: isAnswered,
+        ...(isChecked ? { correct_answer: q.answer, explanation: q.explanation } : {})
+    }
+}
+
+function setAiResponseMode(isChecked) {
+    const title = document.getElementById("doubtResponseTitle")
+    if (!title) return
+    title.innerText = isChecked ? "✅ Explanation" : "💡 Guidance"
+}
+
+function resetHintPanel() {
+    const hintText = document.getElementById("hintText")
+    const hintExplanation = document.getElementById("hintExplanation")
+    const hintConcepts = document.getElementById("hintConcepts")
+    const loading = document.getElementById("hintLoading")
+    const doubtLoading = document.getElementById("doubtLoading")
+    const doubtResponse = document.getElementById("doubtResponse")
+    const doubtInput = document.getElementById("doubtInput")
+    const doubtTitle = document.getElementById("doubtResponseTitle")
+
+    if (loading) loading.classList.add("d-none")
+    if (doubtLoading) doubtLoading.classList.add("d-none")
+    if (hintText) hintText.innerText = "Click “Generate Hint” to get a nudge without revealing the answer."
+    if (hintExplanation) hintExplanation.innerText = "—"
+    if (hintConcepts) hintConcepts.innerHTML = `<li class="eb-hint-muted">—</li>`
+    if (doubtTitle) doubtTitle.innerText = "💡 Guidance"
+    if (doubtResponse) {
+        doubtResponse.classList.add("eb-hint-muted")
+        doubtResponse.innerText = "—"
+    }
+    if (doubtInput) doubtInput.value = ""
+}
+
+function setHintLoading(isLoading) {
+    const loading = document.getElementById("hintLoading")
+    const hintBtn = document.getElementById("hintBtn")
+    if (loading) {
+        loading.classList.toggle("d-none", !isLoading)
+    }
+    if (hintBtn) {
+        hintBtn.disabled = isLoading
+        hintBtn.innerText = isLoading ? "Generating..." : "Generate Hint"
+    }
+}
+
+function parseHintReply(text) {
+    const cleaned = stripEmojis((text || "").toString()).trim()
+    if (!cleaned) {
+        return { hint: "", explanation: "", concepts: [] }
+    }
+
+    const normalize = (s) => (s || "").toString().trim()
+    const pickSection = (label) => {
+        const re = new RegExp(String.raw`(?:^|\n)\s*${label}\s*:\s*([\s\S]*?)(?=\n\s*(?:Hint|Explanation|Key\s*Concepts?)\s*:|$)`, "i")
+        const m = cleaned.match(re)
+        return m ? normalize(m[1]) : ""
+    }
+
+    const hint = pickSection("Hint")
+    const explanation = pickSection("Explanation")
+    const conceptsRaw = pickSection("Key\\s*Concepts?")
+
+    const concepts = conceptsRaw
+        ? conceptsRaw
+            .split("\n")
+            .map((l) => l.replace(/^\s*[-*•]\s+/, "").trim())
+            .filter(Boolean)
+        : []
+
+    // If the model didn't follow the template, degrade gracefully.
+    if (!hint && !explanation && concepts.length === 0) {
+        return { hint: cleaned, explanation: "", concepts: [] }
+    }
+
+    return { hint, explanation, concepts }
+}
+
+async function generateHint() {
+    if (isHintRequestInFlight) return
+    if (!questions[currentQuestion]) return
+
+    const hintText = document.getElementById("hintText")
+    const hintExplanation = document.getElementById("hintExplanation")
+    const hintConcepts = document.getElementById("hintConcepts")
+
+    try {
+        isHintRequestInFlight = true
+        setHintLoading(true)
+
+        const prompt =
+            "You are an AI exam assistant. Generate help WITHOUT revealing the correct answer.\n" +
+            "Return exactly in this format:\n" +
+            "Hint: <2-4 lines>\n" +
+            "Explanation: <short concept-level explanation>\n" +
+            "Key Concepts:\n" +
+            "- <bullet>\n" +
+            "- <bullet>\n"
+
+        const response = await fetch("/chat", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                question: prompt,
+                history: [],
+                question_context: getCurrentQuestionContext()
+            })
+        })
+
+        const data = await response.json()
+        if (!response.ok) {
+            throw new Error(data.error || "Hint API failed")
+        }
+
+        const parsed = parseHintReply(data.reply || "")
+        if (hintText) hintText.innerText = parsed.hint || "No hint available."
+        if (hintExplanation) hintExplanation.innerText = parsed.explanation || "—"
+        if (hintConcepts) {
+            if (parsed.concepts && parsed.concepts.length) {
+                hintConcepts.innerHTML = parsed.concepts.map((c) => `<li>${escapeHtml(c)}</li>`).join("")
+            } else {
+                hintConcepts.innerHTML = `<li class="eb-hint-muted">—</li>`
+            }
+        }
+    } catch (err) {
+        console.error(err)
+        if (hintText) hintText.innerText = "Couldn’t generate a hint right now. Please try again."
+        if (hintExplanation) hintExplanation.innerText = "—"
+        if (hintConcepts) hintConcepts.innerHTML = `<li class="eb-hint-muted">—</li>`
+    } finally {
+        setHintLoading(false)
+        isHintRequestInFlight = false
+    }
+}
+
+function setDoubtLoading(isLoading) {
+    const loading = document.getElementById("doubtLoading")
+    const askBtn = document.getElementById("doubtAskBtn")
+    if (loading) {
+        loading.classList.toggle("d-none", !isLoading)
+    }
+    if (askBtn) {
+        askBtn.disabled = isLoading
+        askBtn.innerText = isLoading ? "Asking..." : "Ask"
+    }
+}
+
+async function askDoubt() {
+    if (isHintRequestInFlight) return
+    if (!questions[currentQuestion]) return
+
+    const input = document.getElementById("doubtInput")
+    const responseBox = document.getElementById("doubtResponse")
+    const userInput = (input?.value || "").trim()
+    if (!userInput) return
+
+    const state = getStateForQuestion(currentQuestion)
+    const q = questions[currentQuestion]
+
+    try {
+        isHintRequestInFlight = true
+        setDoubtLoading(true)
+        if (responseBox) {
+            responseBox.classList.remove("eb-hint-muted")
+            responseBox.innerText = ""
+        }
+
+        const prompt =
+            "You are an AI exam assistant. Help the student understand the concept without directly revealing the correct answer.\n\n" +
+            `Question: ${q.question}\n` +
+            `Options: ${(Array.isArray(q.options) ? q.options.join(" | ") : "")}\n` +
+            `User Doubt: ${userInput}\n\n` +
+            "Rules:\n" +
+            "- Do NOT directly say the correct answer\n" +
+            "- Do NOT eliminate options explicitly\n" +
+            "- Guide the user using hints and concepts\n" +
+            "- Explain the logic behind the topic\n" +
+            "- If user asks directly for the answer, respond:\n" +
+            "  'Try to think through the concept. I can guide you, but I won’t directly reveal the answer.'\n" +
+            "- Keep answers short and helpful"
+
+        const res = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                question: prompt,
+                history: [],
+                user_doubt: userInput,
+                question_context: getCurrentQuestionContext()
+            })
+        })
+
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || "Doubt API failed")
+
+        const reply = stripEmojis(data.reply || "").trim()
+        if (responseBox) {
+            responseBox.classList.toggle("eb-hint-muted", !reply)
+            responseBox.innerText = reply || "—"
+        }
+
+        if (input) input.value = ""
+    } catch (err) {
+        console.error(err)
+        if (responseBox) {
+            responseBox.classList.remove("eb-hint-muted")
+            responseBox.innerText = "Couldn’t answer right now. Please try again."
+        }
+    } finally {
+        setDoubtLoading(false)
+        isHintRequestInFlight = false
     }
 }
 
@@ -419,7 +512,12 @@ function showQuestion() {
         const div = document.createElement("div")
         div.classList.add("option")
         div.dataset.optionValue = opt
-        div.innerHTML = `<b>${String.fromCharCode(65 + index)}</b> ${escapeHtml(stripOptionPrefix(opt))}`
+        div.setAttribute("role", "radio")
+        div.setAttribute("aria-checked", "false")
+        div.innerHTML = `
+<div class="eb-opt-letter" aria-hidden="true">${String.fromCharCode(65 + index)}</div>
+<div class="eb-opt-text">${escapeHtml(stripOptionPrefix(opt))}</div>
+`
         div.onclick = () => selectOption(opt)
         optionsContainer.appendChild(div)
     })
@@ -438,9 +536,8 @@ function showQuestion() {
     renderFeedback(q, state || null)
 
     highlightNavigator()
-    updateChatMeta()
-    currentChatHistory = []
-    renderChatForCurrentQuestion()
+    resetHintPanel()
+    setAiResponseMode(!!(state && state.is_checked))
 }
 
 function selectOption(opt) {
@@ -489,6 +586,7 @@ function checkAnswer() {
 
     updateAnswered()
     highlightNavigator()
+    setAiResponseMode(true)
 }
 
 document.getElementById("nextBtn").onclick = () => {
@@ -512,6 +610,7 @@ function buildNavigator() {
     for (let i = 0; i < totalQuestions; i++) {
         const box = document.createElement("div")
         box.innerText = i + 1
+        box.classList.add("eb-nav-item")
         box.onclick = () => {
             currentQuestion = i
             showQuestion()
@@ -521,21 +620,18 @@ function buildNavigator() {
 }
 
 function highlightNavigator() {
-    const grid = document.getElementById("navigatorGrid").children
+    const grid = document.getElementById("navigatorGrid")?.children
+    if (!grid) return
 
     for (let i = 0; i < grid.length; i++) {
-        grid[i].style.background = "#d9dee7"
-        grid[i].style.color = "black"
-
+        grid[i].classList.remove("is-current", "is-answered")
         const state = getStateForQuestion(i)
         const isAnswered = state ? state.is_answered : answers[i] !== null
 
         if (i === currentQuestion) {
-            grid[i].style.background = "#3b6ef3"
-            grid[i].style.color = "white"
+            grid[i].classList.add("is-current")
         } else if (isAnswered) {
-            grid[i].style.background = "#2ecc71"
-            grid[i].style.color = "white"
+            grid[i].classList.add("is-answered")
         }
     }
 }
@@ -547,7 +643,14 @@ function updateAnswered() {
     } else {
         count = answers.filter(a => a !== null).length
     }
-    document.querySelector(".answered").innerText = `${count} / ${totalQuestions} answered`
+    const answeredEl = document.querySelector(".answered")
+    if (answeredEl) answeredEl.innerText = `${count} / ${totalQuestions} answered`
+
+    const bar = document.getElementById("topProgressBar")
+    if (bar && totalQuestions > 0) {
+        const pct = Math.round((count / totalQuestions) * 100)
+        bar.style.width = `${pct}%`
+    }
 }
 
 function submitExam() {
@@ -580,9 +683,14 @@ function submitExam() {
     resultHTML += `<h2 class="score-box">Score: ${score}/${questions.length}</h2>`
     document.querySelector(".question-panel").innerHTML = resultHTML
 
-    const submitButton = document.querySelector(".submit-btn")
+    const submitButton = document.querySelector(".eb-btn-submit")
     if (submitButton) {
         submitButton.style.display = "none"
+    }
+
+    const sidebar = document.querySelector("aside")
+    if (sidebar) {
+        sidebar.style.display = "none"
     }
 }
 
@@ -606,74 +714,3 @@ setInterval(() => {
     document.querySelector(".timer").innerText =
         `Time Left: ${minutes}:${seconds.toString().padStart(2, "0")}`
 }, 1000)
-
-function toggleChat() {
-    if (isChatDragging) return; // Prevent toggle if user is dragging it
-    
-    const chat = document.getElementById("chatWindow")
-    chat.style.display = chat.style.display === "flex" ? "none" : "flex"
-    if (chat.style.display === "flex") {
-        updateChatMeta()
-        renderChatForCurrentQuestion()
-    }
-}
-
-async function sendMessage() {
-    if (isChatRequestInFlight) return
-
-    const input = document.getElementById("chatInput")
-    const sendButton = document.getElementById("chatSendBtn")
-    const message = input.value.trim()
-
-    if (message === "") return
-
-    const cleanUserMessage = stripEmojis(message)
-    if (cleanUserMessage === "") {
-        input.value = ""
-        return
-    }
-
-    const historyForApi = currentChatHistory
-        .slice(-4)
-        .map((msg) => ({
-            role: msg.role,
-            content: msg.content
-        }))
-
-    appendChatMessage("user", cleanUserMessage, true)
-    input.value = ""
-
-    try {
-        isChatRequestInFlight = true
-        if (sendButton) sendButton.disabled = true
-        appendChatMessage("assistant", "Typing...", false)
-
-        const response = await fetch("/chat", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                question: cleanUserMessage,
-                history: historyForApi,
-                question_context: getCurrentQuestionContext()
-            })
-        })
-
-        const data = await response.json()
-        if (!response.ok) {
-            throw new Error(data.error || "Chat API failed")
-        }
-
-        renderChatForCurrentQuestion()
-        const cleanReply = stripEmojis(data.reply || "")
-        appendChatMessage("assistant", cleanReply, true)
-    } catch (err) {
-        console.error(err)
-        renderChatForCurrentQuestion()
-        appendChatMessage("assistant", "Chatbot error. Please try again.", false)
-    } finally {
-        isChatRequestInFlight = false
-        if (sendButton) sendButton.disabled = false
-    }
-}

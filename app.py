@@ -278,6 +278,7 @@ def chat():
     try:
         data = request.json or {}
         question = (data.get("question") or "").strip()
+        user_doubt = (data.get("user_doubt") or "").strip()
         history = data.get("history") or []
         question_context = data.get("question_context") or {}
 
@@ -286,7 +287,7 @@ def chat():
 
         if not is_question_related(question, question_context):
             return jsonify({
-                "reply": "Please ask only about the current question and its options."
+                "reply": "Please ask questions related to the current question only."
             })
 
         safe_history = []
@@ -303,12 +304,14 @@ def chat():
                 safe_history.append({"role": role, "content": content})
 
         context_lines = []
+        is_checked = False
         if isinstance(question_context, dict) and question_context:
             q_text = (question_context.get("question") or "").strip()
             options = question_context.get("options") or []
             selected = question_context.get("selected_answer")
             correct = question_context.get("correct_answer")
             explanation = question_context.get("explanation")
+            is_checked = bool(question_context.get("is_checked"))
             q_no = question_context.get("question_number")
             total = question_context.get("total_questions")
 
@@ -318,19 +321,37 @@ def chat():
                 context_lines.append("Options: " + " | ".join(str(opt) for opt in options))
             if selected:
                 context_lines.append(f"Student selected: {selected}")
-            if correct:
-                context_lines.append(f"Correct answer: {correct}")
-            if explanation:
-                context_lines.append(f"Base explanation: {explanation}")
+            # Only include answer/explanation context AFTER "Check Answer"
+            if is_checked:
+                if correct:
+                    context_lines.append(f"Correct answer: {correct}")
+                if explanation:
+                    context_lines.append(f"Base explanation: {explanation}")
 
-        system_prompt = (
-            "You are an MCQ exam tutor. Respond precisely and briefly. "
-            "Use current-question context when available. "
-            "Explain why the correct option is correct and why the asked/selected option is incorrect. "
-            "Do not use emoji. "
-            "Response rules: 1) max 45 words, 2) short lines, 3) no long paragraphs, "
-            "4) if user asks direct fact, answer in one line first."
-        )
+        # Lightweight "cheat" detection (only before answer is checked)
+        doubt_text = (user_doubt or question).lower()
+        if not is_checked and re.search(r"\b(answer|correct option|correct answer|tell me the answer|give me the answer)\b", doubt_text):
+            return jsonify({"reply": "I’ll help you understand, but try solving it first 😉"})
+
+        if is_checked:
+            system_prompt = (
+                "You are an AI exam assistant. The student has already checked the answer. "
+                "You may reveal the correct answer and explain clearly why it is correct and why other options are wrong. "
+                "Keep it short and helpful. Do not use emoji."
+            )
+        else:
+            system_prompt = (
+                "You are an AI exam assistant. Help the student understand the concept without directly revealing the correct answer.\n\n"
+                "Rules:\n"
+                "- Do NOT directly say the correct answer\n"
+                "- Do NOT eliminate options explicitly\n"
+                "- Guide the user using hints and concepts\n"
+                "- Explain the logic behind the topic\n"
+                "- If user asks directly for the answer, respond:\n"
+                "  'Try to think through the concept. I can guide you, but I won’t directly reveal the answer.'\n"
+                "- Keep answers short and helpful\n"
+                "Do not use emoji."
+            )
 
         messages = [{"role": "system", "content": system_prompt}]
         if context_lines:
