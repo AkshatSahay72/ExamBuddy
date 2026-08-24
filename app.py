@@ -242,7 +242,7 @@ def generate():
                 prompt += "\nPrevious output was invalid. Return strict valid JSON only."
 
             completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="qwen/qwen3.6-27b",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2
             )
@@ -365,7 +365,7 @@ def chat():
         messages.append({"role": "user", "content": question})
 
         completion = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="qwen/qwen3.6-27b",
             messages=messages,
             temperature=0.2
         )
