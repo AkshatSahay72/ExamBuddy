@@ -13,7 +13,7 @@ import re
 
 load_dotenv()
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+from config import GROQ_API_KEY, MODEL_NAME
 
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY not found. Put it in your .env file")
@@ -242,7 +242,7 @@ def generate():
                 prompt += "\nPrevious output was invalid. Return strict valid JSON only."
 
             completion = client.chat.completions.create(
-                model="qwen/qwen3.6-27b",
+                model=MODEL_NAME,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2
             )
@@ -365,7 +365,7 @@ def chat():
         messages.append({"role": "user", "content": question})
 
         completion = client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
+            model=MODEL_NAME,
             messages=messages,
             temperature=0.2
         )

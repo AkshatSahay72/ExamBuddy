@@ -4,10 +4,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from config import MODEL_NAME
+
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 response = client.chat.completions.create(
-    model="llama-3.1-8b-instant",
+    model=MODEL_NAME,
     messages=[
         {"role":"user","content":"Explain normalization in DBMS in one sentence"}
     ]

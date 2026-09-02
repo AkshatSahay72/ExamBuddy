@@ -1,4 +1,4 @@
-﻿# ExamBuddy
+# ExamBuddy
 
 AI-powered mock test generator for exam preparation. Build topic-specific MCQ tests, get instant correctness feedback, and ask focused doubt-clearing questions on the active MCQ.
 
@@ -15,7 +15,7 @@ Live Demo: https://exam-buddy-sand.vercel.app
 
 ## Tech Stack
 - Backend: Flask, Flask-CORS
-- LLM: Groq API (`llama-3.1-8b-instant`)
+- LLM: Groq API (`qwen/qwen3.8-27b`)
 - Frontend: HTML, CSS, Vanilla JavaScript
 - Deployment: Render + Gunicorn
 
