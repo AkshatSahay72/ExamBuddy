@@ -17,12 +17,15 @@ Live Demo: https://exam-buddy-sand.vercel.app
 - Backend: Flask, Flask-CORS
 - LLM: Groq API (`qwen/qwen3.8-27b`)
 - Frontend: HTML, CSS, Vanilla JavaScript
-- Deployment: Render + Gunicorn
+- Deployment: Render / Docker / Gunicorn
 
 ## Project Structure
 ```text
 ExamBuddy/
+|- Dockerfile
+|- .dockerignore
 |- app.py
+|- config.py
 |- requirements.txt
 |- render.yaml
 |- Procfile
@@ -78,6 +81,7 @@ pip install -r requirements.txt
 Create `.env` in project root:
 ```env
 GROQ_API_KEY=your_groq_api_key_here
+MODEL_NAME=qwen/qwen3.8-27b # (Optional, defaults to qwen/qwen3.8-27b)
 FLASK_DEBUG=1
 HOST=0.0.0.0
 PORT=5000
@@ -88,6 +92,25 @@ PORT=5000
 python app.py
 ```
 Open: `http://localhost:5000`
+
+## Docker Deployment
+ExamBuddy includes a production-ready `Dockerfile` and `.dockerignore`.
+
+### Build Docker Image
+```bash
+docker build -t exambuddy .
+```
+
+### Run Docker Container
+```bash
+docker run -d -p 5000:5000 --env-file .env --name exambuddy exambuddy
+```
+Or pass the environment variables directly:
+```bash
+docker run -d -p 5000:5000 -e GROQ_API_KEY=your_key_here --name exambuddy exambuddy
+```
+
+The container automatically maps `$PORT` if set by cloud orchestrators (e.g., Render, Railway, Fly.io, Google Cloud Run, AWS ECS).
 
 ## Deploy on Render
 This repo includes both `render.yaml` and `Procfile`.
