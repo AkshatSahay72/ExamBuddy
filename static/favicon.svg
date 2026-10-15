@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="ebGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+  <rect width="48" height="48" rx="12" fill="url(#ebGrad)" />
+  <!-- Cap base -->
+  <path d="M24 12L38 19L24 26L10 19L24 12Z" fill="#ffffff" />
+  <!-- Cap underside -->
+  <path d="M15 22.5V28C15 31.5 19 34 24 34C29 34 33 31.5 33 28V22.5L24 27L15 22.5Z" fill="#e0e7ff" />
+  <!-- Tassel -->
+  <path d="M35 20.5V30" stroke="#fef08a" stroke-width="2" stroke-linecap="round" />
+  <circle cx="35" cy="31" r="1.5" fill="#fef08a" />
+</svg>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ error_title or "Page Not Found" }} - ExamBuddy</title>
+  <meta name="description" content="ExamBuddy AI Mock Test error page.">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="setup-page">
+  <header class="eb-topbar">
+    <div class="eb-nav-shell container-fluid d-flex align-items-center justify-content-between">
+      <a href="/" class="eb-brand-link" aria-label="ExamBuddy Home">
+        <div class="eb-logo" aria-hidden="true">EB</div>
+        <span class="eb-brand-title">ExamBuddy</span>
+      </a>
+      <a href="/" class="eb-link-subtle">Start Test</a>
+    </div>
+  </header>
+
+  <main class="eb-page-error">
+    <div class="eb-error-card">
+      <div class="eb-error-code">{{ "500" if error_title == "Server Error" else "404" }}</div>
+      <h1 class="eb-error-heading">{{ error_title or "Page Not Found" }}</h1>
+      <p class="eb-error-description">
+        {{ error_message or "The page or resource you are looking for doesn’t exist, has been moved, or is temporarily unavailable." }}
+      </p>
+      <div class="eb-error-actions">
+        <a href="/" class="btn-primary-action">Go to Home</a>
+        <a href="/exam" class="btn-secondary-action">Go to Exam</a>
+      </div>
+    </div>
+  </main>
+
+  <footer class="eb-footer">
+    <div class="eb-footer-shell">
+      <p>&copy; <span id="currentYear"></span> ExamBuddy. Intelligent AI Test Preparation.</p>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("currentYear").textContent = new Date().getFullYear();
+  </script>
+</body>
+</html>

@@ -1,40 +1,182 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ExamBuddy Setup</title>
-<link rel="stylesheet" href="/static/style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ExamBuddy - AI-Powered Mock Test & Practice Engine</title>
+  <meta name="description" content="Generate focused AI mock tests on any topic with instant feedback, guided hints, and detailed explanations.">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="setup-page">
-<main class="setup-shell">
-<section class="setup-hero">
-<p class="setup-tag">Mock Test Builder</p>
-<h1>Build a focused practice test in under 30 seconds</h1>
-<p>Choose your topic, question count, and difficulty. ExamBuddy will generate an MCQ set with explanations and instant feedback.</p>
-</section>
+  <a href="#main-content" class="skip-link">Skip to main content</a>
 
-<form class="setup-card" onsubmit="startExam(event)">
-<h2>Start New Test</h2>
+  <header class="eb-topbar">
+    <div class="eb-nav-shell container-fluid">
+      <div class="d-flex align-items-center justify-content-between w-100">
+        <a href="/" class="eb-brand-link" aria-label="ExamBuddy Home">
+          <div class="eb-logo" aria-hidden="true">EB</div>
+          <span class="eb-brand-title">ExamBuddy</span>
+        </a>
+        <div class="d-flex align-items-center gap-2">
+          <span class="eb-badge-pill">AI Test Engine</span>
+        </div>
+      </div>
+    </div>
+  </header>
 
-<label for="topic">Topic</label>
-<input id="topic" placeholder="Example: Machine Learning" required>
+  <main id="main-content" class="setup-shell">
+    <section class="setup-hero">
+      <div class="setup-tag-wrapper">
+        <span class="setup-tag">Intelligent Exam Preparation</span>
+      </div>
+      <h1 class="setup-headline">Master any subject with instant, adaptive mock tests</h1>
+      <p class="setup-subhead">
+        Build a targeted practice test in seconds. Powered by AI with step-by-step guidance, concept hints, and comprehensive explanations.
+      </p>
 
-<label for="num">Number of Questions</label>
-<input id="num" type="number" min="3" max="30" value="10" required>
+      <div class="setup-highlights">
+        <div class="highlight-item">
+          <span class="highlight-icon" aria-hidden="true">⚡</span>
+          <div>
+            <strong>Instant Generation</strong>
+            <p>High-yield MCQs generated on demand for any subject.</p>
+          </div>
+        </div>
+        <div class="highlight-item">
+          <span class="highlight-icon" aria-hidden="true">💡</span>
+          <div>
+            <strong>AI Socratic Tutor</strong>
+            <p>Get conceptual nudges and ask doubts without spoiling answers.</p>
+          </div>
+        </div>
+        <div class="highlight-item">
+          <span class="highlight-icon" aria-hidden="true">📊</span>
+          <div>
+            <strong>Detailed Performance</strong>
+            <p>Track accuracy, review mistakes, and solidify concepts.</p>
+          </div>
+        </div>
+      </div>
+    </section>
 
-<label for="difficulty">Difficulty</label>
-<select id="difficulty">
-<option value="easy">Easy</option>
-<option value="medium" selected>Medium</option>
-<option value="hard">Hard</option>
-</select>
+    <section class="setup-card-wrapper">
+      <form class="setup-card" onsubmit="startExam(event)" novalidate aria-labelledby="form-heading">
+        <div class="setup-card-header">
+          <h2 id="form-heading" class="setup-card-title">Configure Your Test</h2>
+          <p class="setup-card-subtitle">Customize parameters to match your study goals</p>
+        </div>
 
-<p id="setupError" class="setup-error"></p>
-<button id="startBtn" type="submit">Generate Test</button>
-</form>
-</main>
+        <div class="form-group">
+          <div class="d-flex justify-content-between align-items-center">
+            <label for="topic" class="form-label">Topic or Subject</label>
+            <span class="form-hint-inline">e.g., Data Structures, Python, GATE CS</span>
+          </div>
+          <input 
+            id="topic" 
+            name="topic"
+            type="text"
+            class="form-input" 
+            placeholder="What do you want to practice?" 
+            required 
+            aria-required="true"
+            aria-describedby="topic-help setupError"
+            autocomplete="off"
+            maxlength="100"
+          >
+          <div id="topic-help" class="sr-only">Enter the topic or subject for your practice exam.</div>
 
-<script src="/static/setup.js"></script>
+          <!-- Quick Topic Suggestions -->
+          <div class="quick-topics-label">Popular topics:</div>
+          <div class="quick-topics-grid" role="group" aria-label="Topic suggestions">
+            <button type="button" class="topic-chip" onclick="selectTopicPreset('Data Structures & Algorithms')">Data Structures</button>
+            <button type="button" class="topic-chip" onclick="selectTopicPreset('Python Programming')">Python</button>
+            <button type="button" class="topic-chip" onclick="selectTopicPreset('Operating Systems')">Operating Systems</button>
+            <button type="button" class="topic-chip" onclick="selectTopicPreset('Computer Networks')">Networks</button>
+            <button type="button" class="topic-chip" onclick="selectTopicPreset('SQL & Database Management')">DBMS / SQL</button>
+            <button type="button" class="topic-chip" onclick="selectTopicPreset('Machine Learning Fundamentals')">Machine Learning</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="num" class="form-label">Number of Questions</label>
+          <div class="num-selector-row">
+            <div class="num-presets" role="radiogroup" aria-label="Quick question count">
+              <button type="button" class="preset-btn" data-count="5" onclick="selectNumPreset(5)">5</button>
+              <button type="button" class="preset-btn is-active" data-count="10" onclick="selectNumPreset(10)">10</button>
+              <button type="button" class="preset-btn" data-count="15" onclick="selectNumPreset(15)">15</button>
+              <button type="button" class="preset-btn" data-count="20" onclick="selectNumPreset(20)">20</button>
+            </div>
+            <div class="custom-num-wrapper">
+              <input 
+                id="num" 
+                name="num"
+                type="number" 
+                min="3" 
+                max="30" 
+                value="10" 
+                class="form-input num-input" 
+                required 
+                aria-label="Custom number of questions (3 to 30)"
+                oninput="onCustomNumInput(this.value)"
+              >
+              <span class="custom-num-suffix">questions</span>
+            </div>
+          </div>
+          <small class="form-helper-text">Select between 3 and 30 questions (Standard: 10 questions ~ 15 minutes)</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" id="difficulty-label">Difficulty Level</label>
+          <div class="difficulty-cards" role="radiogroup" aria-labelledby="difficulty-label">
+            <label class="diff-card">
+              <input type="radio" name="difficulty" value="easy" class="diff-radio">
+              <div class="diff-content">
+                <span class="diff-title">Easy</span>
+                <span class="diff-desc">Foundational concepts &amp; terminology</span>
+              </div>
+            </label>
+            <label class="diff-card is-selected">
+              <input type="radio" name="difficulty" value="medium" class="diff-radio" checked>
+              <div class="diff-content">
+                <span class="diff-title">Medium</span>
+                <span class="diff-desc">Standard exam-level problem solving</span>
+              </div>
+            </label>
+            <label class="diff-card">
+              <input type="radio" name="difficulty" value="hard" class="diff-radio">
+              <div class="diff-content">
+                <span class="diff-title">Hard</span>
+                <span class="diff-desc">Advanced concepts &amp; edge cases</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div id="setupError" class="setup-error" role="alert" aria-live="assertive"></div>
+
+        <button id="startBtn" type="submit" class="btn-start-exam">
+          <span class="btn-text">Generate Practice Test</span>
+          <span class="btn-arrow" aria-hidden="true">&rarr;</span>
+        </button>
+      </form>
+    </section>
+  </main>
+
+  <footer class="eb-footer">
+    <div class="eb-footer-shell">
+      <div class="footer-brand">
+        <div class="eb-logo sm" aria-hidden="true">EB</div>
+        <span>ExamBuddy AI &bull; Intelligent Study Companion</span>
+      </div>
+      <p class="footer-copy">&copy; <span id="currentYear"></span> ExamBuddy. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script src="/static/setup.js"></script>
+  <script>
+    document.getElementById("currentYear").textContent = new Date().getFullYear();
+  </script>
 </body>
 </html>

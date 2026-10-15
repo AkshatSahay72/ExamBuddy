@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 from groq import Groq
 from dotenv import load_dotenv
@@ -203,10 +203,16 @@ def generate():
 
         data = request.json or {}
 
-        topic = data.get("topic", "Data Structures")
+        raw_topic = (data.get("topic") or "").strip()
+        topic = raw_topic if raw_topic else "Data Structures"
         normalized_topic = normalize_exam_topic(topic)
-        num = max(3, min(int(data.get("num", 5)), 30))
-        difficulty = data.get("difficulty", "medium")
+        try:
+            num = max(3, min(int(data.get("num") or 5), 30))
+        except (ValueError, TypeError):
+            num = 5
+        difficulty = (data.get("difficulty") or "medium").lower()
+        if difficulty not in ("easy", "medium", "hard"):
+            difficulty = "medium"
 
         base_prompt = f"""
         Generate {num} multiple choice questions about {normalized_topic}.
@@ -233,7 +239,7 @@ def generate():
         """
 
         last_error = None
-        for attempt in range(1):
+        for attempt in range(3):
             prompt = (
                 base_prompt
                 + "\nDo not include markdown, headings, or code fences."
@@ -375,6 +381,25 @@ def chat():
     except Exception as e:
         print("CHAT ERROR:", e)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(
+        os.path.join(app.root_path, "static"),
+        "favicon.svg",
+        mimetype="image/svg+xml"
+    )
+
+
+@app.errorhandler(404)
+def page_not_found(e):
+    return render_template("404.html"), 404
+
+
+@app.errorhandler(500)
+def server_error(e):
+    return render_template("404.html", error_title="Server Error", error_message="An unexpected server error occurred. Please try again."), 500
 
 
 # -----------------------------
