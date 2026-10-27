@@ -183,7 +183,7 @@ async function generateTest() {
     let lastError = "Unable to connect to the test generation engine.";
     for (let attempt = 1; attempt <= 2; attempt++) {
         try {
-            const response = await fetch("/generate", {
+            const response = await fetch("generate", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -768,7 +768,7 @@ async function sendUserChatMessage(query) {
             .slice(-8)
             .map(m => ({ role: m.role, content: m.content }));
 
-        const response = await fetch("/chat", {
+        const response = await fetch("chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -908,7 +908,7 @@ function closeSubmitModal() {
 function confirmExitExam(event) {
     if (event) event.preventDefault();
     if (isExamSubmitted) {
-        window.location.href = "/";
+        window.location.href = "./";
         return;
     }
 

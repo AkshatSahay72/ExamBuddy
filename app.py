@@ -15,10 +15,6 @@ load_dotenv()
 
 from config import GROQ_API_KEY, MODEL_NAME
 
-if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY not found. Put it in your .env file")
-
-
 # -----------------------------
 # FLASK APP
 # -----------------------------
@@ -31,7 +27,14 @@ CORS(app)
 # GROQ CLIENT
 # -----------------------------
 
-client = Groq(api_key=GROQ_API_KEY)
+client = None
+if GROQ_API_KEY:
+    try:
+        client = Groq(api_key=GROQ_API_KEY)
+    except Exception as e:
+        print(f"Warning: Failed to initialize Groq client: {e}")
+else:
+    print("Warning: GROQ_API_KEY is not set. API generation will be unavailable.")
 
 
 def extract_questions_from_text(raw_text):
@@ -182,6 +185,15 @@ def normalize_exam_topic(topic):
 # -----------------------------
 
 
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "healthy",
+        "app": "ExamBuddy",
+        "groq_configured": bool(GROQ_API_KEY)
+    }), 200
+
+
 @app.route("/")
 def setup():
     return render_template("setup.html")
@@ -198,6 +210,8 @@ def exam():
 
 @app.route("/generate", methods=["POST"])
 def generate():
+    if not client:
+        return jsonify({"error": "GROQ_API_KEY is not configured on this server."}), 500
 
     try:
 
@@ -281,6 +295,8 @@ def generate():
 
 @app.route("/chat", methods=["POST"])
 def chat():
+    if not client:
+        return jsonify({"error": "GROQ_API_KEY is not configured on this server."}), 500
     try:
         data = request.json or {}
         question = (data.get("question") or "").strip()

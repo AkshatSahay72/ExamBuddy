@@ -111,5 +111,5 @@ function startExam(event) {
         console.warn("localStorage error", e);
     }
 
-    window.location.href = "/exam";
+    window.location.href = "exam";
 }

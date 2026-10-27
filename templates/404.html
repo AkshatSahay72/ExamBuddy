@@ -5,17 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ error_title or "Page Not Found" }} - ExamBuddy</title>
   <meta name="description" content="ExamBuddy AI Mock Test error page.">
-  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" type="image/svg+xml" href="static/favicon.svg">
+  <link rel="stylesheet" href="static/style.css">
 </head>
 <body class="setup-page">
   <header class="eb-topbar">
     <div class="eb-nav-shell container-fluid d-flex align-items-center justify-content-between">
-      <a href="/" class="eb-brand-link" aria-label="ExamBuddy Home">
+      <a href="./" class="eb-brand-link" aria-label="ExamBuddy Home">
         <div class="eb-logo" aria-hidden="true">EB</div>
         <span class="eb-brand-title">ExamBuddy</span>
       </a>
-      <a href="/" class="eb-link-subtle">Start Test</a>
+      <a href="./" class="eb-link-subtle">Start Test</a>
     </div>
   </header>
 
@@ -27,8 +27,8 @@
         {{ error_message or "The page or resource you are looking for doesn’t exist, has been moved, or is temporarily unavailable." }}
       </p>
       <div class="eb-error-actions">
-        <a href="/" class="btn-primary-action">Go to Home</a>
-        <a href="/exam" class="btn-secondary-action">Go to Exam</a>
+        <a href="./" class="btn-primary-action">Go to Home</a>
+        <a href="exam" class="btn-secondary-action">Go to Exam</a>
       </div>
     </div>
   </main>
