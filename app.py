@@ -4,6 +4,7 @@ try:
     from groq import Groq
 except ImportError:
     import urllib.request
+    import urllib.error
     import json
     import ssl
 
@@ -39,14 +40,44 @@ except ImportError:
                         headers=headers,
                         method="POST"
                     )
+
+                    def _fetch(ctx):
+                        with urllib.request.urlopen(req, context=ctx, timeout=45) as resp:
+                            return json.loads(resp.read().decode("utf-8"))
+
                     try:
                         ctx = ssl.create_default_context()
-                        with urllib.request.urlopen(req, context=ctx, timeout=45) as resp:
-                            data = json.loads(resp.read().decode("utf-8"))
-                    except ssl.SSLCertVerificationError:
-                        ctx = ssl._create_unverified_context()
-                        with urllib.request.urlopen(req, context=ctx, timeout=45) as resp:
-                            data = json.loads(resp.read().decode("utf-8"))
+                        data = _fetch(ctx)
+                    except urllib.error.HTTPError as http_err:
+                        body = http_err.read().decode("utf-8", errors="replace")
+                        try:
+                            err_data = json.loads(body)
+                            msg = err_data.get("error", {}).get("message") or body
+                        except Exception:
+                            msg = body
+                        raise RuntimeError(f"Groq API error ({http_err.code}): {msg}")
+                    except (urllib.error.URLError, ssl.SSLError) as url_err:
+                        is_ssl = isinstance(url_err, ssl.SSLError) or (
+                            hasattr(url_err, "reason") and isinstance(url_err.reason, ssl.SSLError)
+                        )
+                        if is_ssl:
+                            try:
+                                ctx = ssl._create_unverified_context()
+                                data = _fetch(ctx)
+                            except urllib.error.HTTPError as http_err:
+                                body = http_err.read().decode("utf-8", errors="replace")
+                                try:
+                                    err_data = json.loads(body)
+                                    msg = err_data.get("error", {}).get("message") or body
+                                except Exception:
+                                    msg = body
+                                raise RuntimeError(f"Groq API error ({http_err.code}): {msg}")
+                        else:
+                            raise
+
+                    if not isinstance(data, dict) or not data.get("choices"):
+                        err_msg = data.get("error", {}).get("message") if isinstance(data, dict) else str(data)
+                        raise RuntimeError(f"Groq API returned invalid response: {err_msg}")
 
                     class _Choice:
                         def __init__(self, c):

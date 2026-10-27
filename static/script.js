@@ -31,12 +31,6 @@ window.addEventListener("DOMContentLoaded", () => {
     // Global keyboard shortcuts (Escape for modals, 1-4 for options)
     document.addEventListener("keydown", handleGlobalKeydown);
 });
-        nextBtn.addEventListener("click", goToNextQuestion);
-    }
-
-    // Global keyboard shortcuts (Escape for modals, 1-4 for options)
-    document.addEventListener("keydown", handleGlobalKeydown);
-});
 
 function escapeHtml(text) {
     if (!text) return "";
@@ -160,6 +154,12 @@ async function generateTest() {
         localStorage.setItem("difficulty", difficulty);
     }
 
+    questions = [];
+    answers = [];
+    currentQuestion = 0;
+    totalQuestions = 0;
+    questionState = [];
+
     const questionTextEl = document.getElementById("questionText");
     const optionsContainer = document.getElementById("optionsContainer");
     const questionNumberEl = document.getElementById("questionNumber");
@@ -193,9 +193,29 @@ async function generateTest() {
                 })
             });
 
-            const payload = await response.json();
+            let payload = null;
+            const contentType = response.headers.get("content-type") || "";
+            if (contentType.includes("application/json")) {
+                try {
+                    payload = await response.json();
+                } catch (jsonErr) {
+                    // Handled below
+                }
+            }
+
             if (!response.ok) {
-                throw new Error(payload.error || "Failed to generate questions");
+                const errMsg = (payload && payload.error)
+                    ? payload.error
+                    : `Server returned HTTP ${response.status}: ${response.statusText || "Error"}`;
+                throw new Error(errMsg);
+            }
+
+            if (!payload) {
+                try {
+                    payload = await response.json();
+                } catch (parseErr) {
+                    throw new Error(`Invalid response format from server (HTTP ${response.status})`);
+                }
             }
 
             const normalized = normalizeGeneratedQuestions(payload);
@@ -231,6 +251,12 @@ async function generateTest() {
         is_answered: false
     }));
 
+    // Reset control buttons state on successful load/retry
+    const nextBtn = document.getElementById("nextBtn");
+    const submitBtn = document.getElementById("submitExamBtn");
+    if (nextBtn) nextBtn.disabled = false;
+    if (submitBtn) submitBtn.disabled = false;
+
     buildNavigator();
     showQuestion();
     updateAnswered();
@@ -243,12 +269,14 @@ function renderGenerationError(errorMessage) {
     const nextBtn = document.getElementById("nextBtn");
     const submitBtn = document.getElementById("submitExamBtn");
     const checkBtn = document.getElementById("checkAnswerBtn");
+    const optionsContainer = document.getElementById("optionsContainer");
 
     if (questionNumberEl) questionNumberEl.textContent = "Generation Error";
     if (prevBtn) prevBtn.disabled = true;
     if (nextBtn) nextBtn.disabled = true;
     if (submitBtn) submitBtn.disabled = true;
     if (checkBtn) checkBtn.disabled = true;
+    if (optionsContainer) optionsContainer.innerHTML = "";
 
     if (questionTextEl) {
         questionTextEl.innerHTML = `
@@ -258,7 +286,7 @@ function renderGenerationError(errorMessage) {
                 <p class="error-desc">${escapeHtml(errorMessage)}</p>
                 <div class="d-flex gap-2 justify-content-center mt-3">
                     <button class="btn btn-primary" onclick="generateTest()">Retry Generation</button>
-                    <a href="/" class="btn btn-outline-secondary">Back to Setup</a>
+                    <a href="./" class="btn btn-outline-secondary">Back to Setup</a>
                 </div>
             </div>
         `;
@@ -1154,7 +1182,7 @@ function renderResultsDashboard() {
                     <button type="button" class="btn btn-primary eb-res-btn" onclick="restartSameExam()">
                         &#x21bb; Retake Test
                     </button>
-                    <a href="/" class="btn btn-outline-secondary eb-res-btn">
+                    <a href="./" class="btn btn-outline-secondary eb-res-btn">
                         New Topic Test
                     </a>
                 </div>
