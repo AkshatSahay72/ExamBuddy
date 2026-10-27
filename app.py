@@ -3,7 +3,65 @@ from flask_cors import CORS
 try:
     from groq import Groq
 except ImportError:
-    Groq = None
+    import urllib.request
+    import json
+    import ssl
+
+    class _GroqFallback:
+        def __init__(self, api_key=None):
+            self.api_key = api_key
+            self.chat = self._Chat(api_key)
+
+        class _Chat:
+            def __init__(self, api_key):
+                self.completions = self._Completions(api_key)
+
+            class _Completions:
+                def __init__(self, api_key):
+                    self.api_key = api_key
+
+                def create(self, model, messages, temperature=0.2, **kwargs):
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ExamBuddy/1.0"
+                    }
+                    payload = {
+                        "model": model,
+                        "messages": messages,
+                        "temperature": temperature,
+                        **kwargs
+                    }
+                    req = urllib.request.Request(
+                        url,
+                        data=json.dumps(payload).encode("utf-8"),
+                        headers=headers,
+                        method="POST"
+                    )
+                    try:
+                        ctx = ssl.create_default_context()
+                        with urllib.request.urlopen(req, context=ctx, timeout=45) as resp:
+                            data = json.loads(resp.read().decode("utf-8"))
+                    except ssl.SSLCertVerificationError:
+                        ctx = ssl._create_unverified_context()
+                        with urllib.request.urlopen(req, context=ctx, timeout=45) as resp:
+                            data = json.loads(resp.read().decode("utf-8"))
+
+                    class _Choice:
+                        def __init__(self, c):
+                            class _Msg:
+                                def __init__(self, m):
+                                    self.content = m.get("content", "")
+                            self.message = _Msg(c.get("message", {}))
+
+                    class _Completion:
+                        def __init__(self, d):
+                            self.choices = [_Choice(c) for c in d.get("choices", [])]
+
+                    return _Completion(data)
+
+    Groq = _GroqFallback
 from dotenv import load_dotenv
 import os
 import json
@@ -193,7 +251,7 @@ def health():
     return jsonify({
         "status": "healthy",
         "app": "ExamBuddy",
-        "groq_configured": bool(GROQ_API_KEY)
+        "groq_configured": bool(GROQ_API_KEY and client)
     }), 200
 
 
