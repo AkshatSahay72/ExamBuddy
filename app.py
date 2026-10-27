@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
-from groq import Groq
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
 from dotenv import load_dotenv
 import os
 import json
