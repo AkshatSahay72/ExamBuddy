@@ -169,10 +169,10 @@ class TestFlaskEndpointsAndContracts:
                 assert "answer" in q and len(q["answer"]) > 0
                 assert "explanation" in q
 
-    def test_generate_endpoint_error_handling(self, client):
-        """Test /generate returns a JSON error response when generation fails."""
+    def test_generate_endpoint_rate_limit_429(self, client):
+        """Test /generate returns HTTP 429 with retry-after when Groq rate limit is hit."""
         with patch.object(flask_app_module, "client") as mock_client:
-            mock_client.chat.completions.create.side_effect = RuntimeError("Groq API rate limit exceeded")
+            mock_client.chat.completions.create.side_effect = RuntimeError("Rate limit reached for model qwen/qwen3.8-27b ... Please try again in 5.34s.")
 
             resp = client.post("/generate", json={
                 "topic": "Algorithms",
@@ -180,10 +180,28 @@ class TestFlaskEndpointsAndContracts:
                 "difficulty": "hard"
             })
 
-            assert resp.status_code == 500
+            assert resp.status_code == 429
             data = resp.get_json()
             assert "error" in data
-            assert "Groq API rate limit exceeded" in data["error"]
+            assert data.get("code") == "rate_limit_exceeded"
+            assert data.get("retry_after") >= 5.0
+            assert "Retry-After" in resp.headers
+
+    def test_generate_endpoint_error_handling(self, client):
+        """Test /generate returns a JSON error response when unexpected generation failure occurs."""
+        with patch.object(flask_app_module, "client") as mock_client:
+            mock_client.chat.completions.create.side_effect = RuntimeError("Unexpected internal engine error")
+
+            resp = client.post("/generate", json={
+                "topic": "Algorithms",
+                "num": 5,
+                "difficulty": "hard"
+            })
+
+            assert resp.status_code in (500, 502, 503)
+            data = resp.get_json()
+            assert "error" in data
+            assert "Unexpected internal engine error" in data["error"]
 
     def test_chat_endpoint(self, client):
         """Test AI Tutor chat endpoint with contextual guidance."""
@@ -239,6 +257,55 @@ class TestQuestionProcessingLogic:
         assert normalized[0]["question"] == "Valid Q"
         assert normalized[0]["explanation"] == "No explanation provided."
 
+    def test_robust_json_extraction_with_intro_prose_and_nested_brackets(self):
+        """Regression test for the non-greedy regex bug that sliced at options: [...]."""
+        raw = """Here are the multiple choice questions you requested:
+[
+  {
+    "question": "What is the time complexity of searching in a balanced BST?",
+    "options": ["O(1)", "O(log n)", "O(n)", "O(n^2)"],
+    "answer": "O(log n)",
+    "explanation": "Height of balanced tree is log n."
+  },
+  {
+    "question": "Which data structure uses LIFO?",
+    "options": ["Queue", "Stack", "Tree", "Graph"],
+    "answer": "Stack",
+    "explanation": "Stack operates Last-In First-Out."
+  }
+]
+I hope this helps with your exam preparation!"""
+        extracted = extract_questions_from_text(raw)
+        assert len(extracted) == 2
+        assert extracted[0]["question"] == "What is the time complexity of searching in a balanced BST?"
+        assert extracted[1]["answer"] == "Stack"
+
+    def test_robust_json_extraction_with_brackets_in_strings(self):
+        raw = """[
+  {
+    "question": "What does arr[0] evaluate to in arr = [10, 20]?",
+    "options": ["10", "20", "None", "Error"],
+    "answer": "10",
+    "explanation": "0-based indexing returns first element."
+  }
+]"""
+        extracted = extract_questions_from_text(raw)
+        assert len(extracted) == 1
+        assert "arr[0]" in extracted[0]["question"]
+
+    def test_robust_json_extraction_with_trailing_commas(self):
+        raw = """[
+  {
+    "question": "Valid syntax test?",
+    "options": ["A", "B",],
+    "answer": "A",
+    "explanation": "Trailing comma in JSON array",
+  },
+]"""
+        extracted = extract_questions_from_text(raw)
+        assert len(extracted) == 1
+        assert extracted[0]["question"] == "Valid syntax test?"
+
 
 class TestGroqFallbackClient:
     """Test pure-Python HTTP fallback client used on systems without prebuilt wheels."""
@@ -277,3 +344,33 @@ class TestGroqFallbackClient:
                 assert len(comp.choices) == 1
                 assert comp.choices[0].message.content == "Test completion response"
 
+
+
+    def test_backend_timeout_and_execution_budget_alignment(self):
+        """
+        Verify backend per-attempt timeout and total execution budget stay strictly
+        below frontend's 45-second AbortController timeout.
+        """
+        default_timeout = getattr(flask_app_module, "DEFAULT_GROQ_TIMEOUT", None)
+        assert default_timeout is not None, "DEFAULT_GROQ_TIMEOUT must be defined"
+        assert default_timeout <= 20.0, f"Per-attempt timeout ({default_timeout}s) is too high"
+
+        max_backend_attempts = 2
+        max_retry_wait = 6.0  # Max sleep duration allowed for rate limits in generate()
+        overhead_buffer = 1.0  # Marshalling, DNS, HTTP headers
+
+        total_max_backend_budget = (max_backend_attempts * default_timeout) + max_retry_wait + overhead_buffer
+        frontend_abort_timeout = 45.0
+
+        assert total_max_backend_budget < frontend_abort_timeout, (
+            f"Total backend budget ({total_max_backend_budget}s) must be strictly less than "
+            f"frontend abort timeout ({frontend_abort_timeout}s) to prevent orphan processing."
+        )
+
+    def test_fallback_client_timeout_propagation(self):
+        """Verify _GroqFallback sets and propagates configured timeout."""
+        fallback_cls = getattr(flask_app_module, "_GroqFallback", None)
+        if fallback_cls:
+            fb = fallback_cls(api_key="test-key", timeout=12.0)
+            assert fb.timeout == 12.0
+            assert fb.chat.completions.timeout == 12.0

@@ -1,5 +1,39 @@
+import socket
+
+# Built-in DNS fallback for environments where libc dnsproxyd does not resolve public DNS (e.g. Android Termux)
+_orig_getaddrinfo = socket.getaddrinfo
+_FALLBACK_DNS = {
+    "api.groq.com": ["104.18.38.236", "172.64.149.20"],
+    "pypi.org": ["151.101.0.223", "151.101.64.223", "151.101.128.223", "151.101.192.223"],
+    "files.pythonhosted.org": ["151.101.1.63", "151.101.65.63"]
+}
+
+def _patched_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+    except (socket.gaierror, OSError):
+        if host in _FALLBACK_DNS:
+            for ip in _FALLBACK_DNS[host]:
+                try:
+                    return _orig_getaddrinfo(ip, port, family, type, proto, flags)
+                except Exception:
+                    continue
+        raise
+
+socket.getaddrinfo = _patched_getaddrinfo
+
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
+DEFAULT_GROQ_TIMEOUT = 16.0
+
+
+class GroqAPIError(RuntimeError):
+    def __init__(self, message, status_code=500, retry_after=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.retry_after = retry_after
+
+
 try:
     from groq import Groq
 except ImportError:
@@ -9,17 +43,19 @@ except ImportError:
     import ssl
 
     class _GroqFallback:
-        def __init__(self, api_key=None):
+        def __init__(self, api_key=None, timeout=DEFAULT_GROQ_TIMEOUT):
             self.api_key = api_key
-            self.chat = self._Chat(api_key)
+            self.timeout = timeout
+            self.chat = self._Chat(api_key, timeout)
 
         class _Chat:
-            def __init__(self, api_key):
-                self.completions = self._Completions(api_key)
+            def __init__(self, api_key, timeout):
+                self.completions = self._Completions(api_key, timeout)
 
             class _Completions:
-                def __init__(self, api_key):
+                def __init__(self, api_key, timeout):
                     self.api_key = api_key
+                    self.timeout = timeout
 
                 def create(self, model, messages, temperature=0.2, **kwargs):
                     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -41,21 +77,45 @@ except ImportError:
                         method="POST"
                     )
 
+                    def _parse_http_err(http_err):
+                        body = http_err.read().decode("utf-8", errors="replace")
+                        retry_after = None
+                        raw_ra = http_err.headers.get("Retry-After") or http_err.headers.get("retry-after")
+                        if raw_ra:
+                            try:
+                                retry_after = float(raw_ra)
+                            except (ValueError, TypeError):
+                                pass
+
+                        try:
+                            err_data = json.loads(body)
+                            msg = err_data.get("error", {}).get("message") or body
+                        except Exception:
+                            msg = body
+
+                        if retry_after is None and msg:
+                            m = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", msg, re.IGNORECASE)
+                            if m:
+                                try:
+                                    retry_after = float(m.group(1))
+                                except ValueError:
+                                    pass
+
+                        return GroqAPIError(
+                            f"Groq API error ({http_err.code}): {msg}",
+                            status_code=http_err.code,
+                            retry_after=retry_after
+                        )
+
                     def _fetch(ctx):
-                        with urllib.request.urlopen(req, context=ctx, timeout=45) as resp:
+                        with urllib.request.urlopen(req, context=ctx, timeout=self.timeout) as resp:
                             return json.loads(resp.read().decode("utf-8"))
 
                     try:
                         ctx = ssl.create_default_context()
                         data = _fetch(ctx)
                     except urllib.error.HTTPError as http_err:
-                        body = http_err.read().decode("utf-8", errors="replace")
-                        try:
-                            err_data = json.loads(body)
-                            msg = err_data.get("error", {}).get("message") or body
-                        except Exception:
-                            msg = body
-                        raise RuntimeError(f"Groq API error ({http_err.code}): {msg}")
+                        raise _parse_http_err(http_err)
                     except (urllib.error.URLError, ssl.SSLError) as url_err:
                         is_ssl = isinstance(url_err, ssl.SSLError) or (
                             hasattr(url_err, "reason") and isinstance(url_err.reason, ssl.SSLError)
@@ -65,13 +125,7 @@ except ImportError:
                                 ctx = ssl._create_unverified_context()
                                 data = _fetch(ctx)
                             except urllib.error.HTTPError as http_err:
-                                body = http_err.read().decode("utf-8", errors="replace")
-                                try:
-                                    err_data = json.loads(body)
-                                    msg = err_data.get("error", {}).get("message") or body
-                                except Exception:
-                                    msg = body
-                                raise RuntimeError(f"Groq API error ({http_err.code}): {msg}")
+                                raise _parse_http_err(http_err)
                         else:
                             raise
 
@@ -107,6 +161,8 @@ load_dotenv()
 
 from config import GROQ_API_KEY, MODEL_NAME
 
+DEFAULT_GROQ_TIMEOUT = 16.0
+
 # -----------------------------
 # FLASK APP
 # -----------------------------
@@ -122,34 +178,136 @@ CORS(app)
 client = None
 if GROQ_API_KEY:
     try:
-        client = Groq(api_key=GROQ_API_KEY)
+        client = Groq(api_key=GROQ_API_KEY, timeout=DEFAULT_GROQ_TIMEOUT)
+    except TypeError:
+        try:
+            client = Groq(api_key=GROQ_API_KEY)
+        except Exception as e:
+            print(f"Warning: Failed to initialize Groq client: {e}")
     except Exception as e:
         print(f"Warning: Failed to initialize Groq client: {e}")
 else:
     print("Warning: GROQ_API_KEY is not set. API generation will be unavailable.")
 
 
+def is_rate_limit_error(e):
+    if getattr(e, "status_code", None) == 429:
+        return True
+    if hasattr(e, "response") and getattr(e.response, "status_code", None) == 429:
+        return True
+    name = type(e).__name__
+    if "RateLimit" in name:
+        return True
+    err_str = str(e).lower()
+    if "429" in err_str or "rate limit" in err_str:
+        return True
+    return False
+
+
+def get_retry_after(e, default=5.0):
+    if getattr(e, "retry_after", None) is not None:
+        try:
+            return float(e.retry_after)
+        except (ValueError, TypeError):
+            pass
+    if hasattr(e, "response") and getattr(e.response, "headers", None):
+        ra = e.response.headers.get("retry-after") or e.response.headers.get("Retry-After")
+        if ra:
+            try:
+                return float(ra)
+            except (ValueError, TypeError):
+                pass
+    m = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", str(e), re.IGNORECASE)
+    if m:
+        try:
+            return float(m.group(1))
+        except ValueError:
+            pass
+    return default
+
+
+def extract_json_structures(text: str):
+    """
+    Finds balanced JSON array [...] or object {...} substrings in text,
+    properly handling strings, escaped quotes, and nested brackets.
+    """
+    if not text or not isinstance(text, str):
+        return []
+
+    candidates = []
+
+    # 1. Direct trimmed text
+    stripped = text.strip()
+    if stripped:
+        candidates.append(stripped)
+
+    # 2. Markdown code fences
+    fence_matches = re.findall(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+    for fm in fence_matches:
+        f_stripped = fm.strip()
+        if f_stripped and f_stripped not in candidates:
+            candidates.append(f_stripped)
+
+    # 3. Balanced bracket/brace scanner
+    def scan_balanced(open_char, close_char):
+        found = []
+        i = 0
+        n = len(text)
+        while i < n:
+            if text[i] == open_char:
+                start_idx = i
+                depth = 0
+                in_string = False
+                escape = False
+                j = i
+                while j < n:
+                    ch = text[j]
+                    if in_string:
+                        if escape:
+                            escape = False
+                        elif ch == "\\":
+                            escape = True
+                        elif ch == '"':
+                            in_string = False
+                    else:
+                        if ch == '"':
+                            in_string = True
+                        elif ch == open_char:
+                            depth += 1
+                        elif ch == close_char:
+                            depth -= 1
+                            if depth == 0:
+                                candidate = text[start_idx : j + 1].strip()
+                                if candidate not in candidates and candidate not in found:
+                                    found.append(candidate)
+                                i = j
+                                break
+                    j += 1
+            i += 1
+        return found
+
+    candidates.extend(scan_balanced("[", "]"))
+    candidates.extend(scan_balanced("{", "}"))
+    return candidates
+
+
 def extract_questions_from_text(raw_text):
     if not raw_text:
         return []
 
-    candidates = [raw_text]
-
-    block_match = re.search(r"```(?:json)?\s*(.*?)```", raw_text, re.DOTALL | re.IGNORECASE)
-    if block_match:
-        candidates.append(block_match.group(1))
-
-    candidates.extend(re.findall(r"\[[\s\S]*?\]", raw_text))
+    candidates = extract_json_structures(raw_text)
 
     for candidate in candidates:
-        candidate = candidate.strip()
-        if not candidate:
-            continue
-
+        parsed = None
         try:
             parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            continue
+            # Trailing comma cleanup
+            cleaned = re.sub(r",\s*([\]\}])", r"\1", candidate)
+            try:
+                parsed = json.loads(cleaned)
+            except json.JSONDecodeError:
+                continue
 
         if isinstance(parsed, list):
             return parsed
@@ -167,22 +325,39 @@ def normalize_questions(raw_questions):
         if not isinstance(item, dict):
             continue
 
-        question = str(item.get("question", "")).strip()
-        options = item.get("options")
-        answer = str(item.get("answer", "")).strip()
-        explanation = str(item.get("explanation", "")).strip()
+        question = str(item.get("question") or item.get("question_text") or item.get("prompt") or "").strip()
+        raw_options = item.get("options") or item.get("choices") or item.get("answers")
+        answer = str(item.get("answer") or item.get("correct_answer") or item.get("correct_option") or item.get("correct") or "").strip()
+        explanation = str(item.get("explanation") or item.get("reason") or item.get("rationale") or "").strip()
 
-        if not question or not isinstance(options, list) or len(options) < 2 or not answer:
+        cleaned_options = []
+        if isinstance(raw_options, dict):
+            for k in ["A", "B", "C", "D", "a", "b", "c", "d", "1", "2", "3", "4"]:
+                if k in raw_options:
+                    cleaned_options.append(str(raw_options[k]).strip())
+            if not cleaned_options:
+                cleaned_options = [str(v).strip() for v in raw_options.values() if str(v).strip()]
+        elif isinstance(raw_options, list):
+            cleaned_options = [str(opt).strip() for opt in raw_options if str(opt).strip()]
+
+        if not question or len(cleaned_options) < 2:
             continue
 
-        cleaned_options = [str(opt).strip() for opt in options if str(opt).strip()]
-        if len(cleaned_options) < 2:
+        # If answer is just a letter like 'A' or 'B', map to option text
+        letter_map = {"A": 0, "B": 1, "C": 2, "D": 3, "a": 0, "b": 1, "c": 2, "d": 3}
+        if answer in letter_map and letter_map[answer] < len(cleaned_options):
+            resolved_answer = cleaned_options[letter_map[answer]]
+        elif answer in cleaned_options:
+            resolved_answer = answer
+        elif answer:
+            resolved_answer = answer
+        else:
             continue
 
         normalized.append({
             "question": question,
             "options": cleaned_options[:4],
-            "answer": answer,
+            "answer": resolved_answer,
             "explanation": explanation or "No explanation provided."
         })
 
@@ -345,19 +520,55 @@ def generate():
         """
 
         last_error = None
-        for attempt in range(3):
-            prompt = (
-                base_prompt
-                + "\nDo not include markdown, headings, or code fences."
-            )
+        rate_limit_retry_after = 5.0
+
+        # Coordinated backend retry budget: at most 2 model calls
+        max_backend_attempts = 2
+        for attempt in range(max_backend_attempts):
+            prompt = base_prompt
             if attempt > 0:
                 prompt += "\nPrevious output was invalid. Return strict valid JSON only."
 
-            completion = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2
-            )
+            try:
+                completion = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.2
+                )
+            except Exception as e:
+                if is_rate_limit_error(e):
+                    wait_time = get_retry_after(e, default=5.0)
+                    rate_limit_retry_after = max(rate_limit_retry_after, wait_time)
+                    # Bounded single backend retry if wait time <= 6s
+                    if attempt < max_backend_attempts - 1 and wait_time <= 6.0:
+                        import time
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        resp = jsonify({
+                            "error": "ExamBuddy AI rate limit reached. Please wait before retrying.",
+                            "code": "rate_limit_exceeded",
+                            "retry_after": round(wait_time, 1)
+                        })
+                        resp.status_code = 429
+                        resp.headers["Retry-After"] = str(int(wait_time) + 1)
+                        return resp
+                else:
+                    status_code = getattr(e, "status_code", None)
+                    if status_code in (400, 401, 403, 404):
+                        return jsonify({
+                            "error": f"API configuration error: {str(e)}",
+                            "code": "api_error"
+                        }), 502
+
+                    if attempt < max_backend_attempts - 1:
+                        import time
+                        time.sleep(1.5)
+                        continue
+                    return jsonify({
+                        "error": f"AI service temporarily unavailable: {str(e)}",
+                        "code": "service_unavailable"
+                    }), 503
 
             response_text = completion.choices[0].message.content
             parsed_questions = extract_questions_from_text(response_text)
@@ -366,19 +577,20 @@ def generate():
             if len(valid_questions) >= num:
                 return jsonify(valid_questions[:num])
 
-            if valid_questions and attempt == 2:
-                return jsonify(valid_questions)
+            if len(valid_questions) >= 3 or (valid_questions and attempt >= 1):
+                return jsonify(valid_questions[:num])
 
             last_error = "Invalid question format returned by model."
 
-        return jsonify({"error": last_error or "Could not generate questions."}), 500
+        return jsonify({
+            "error": last_error or "Could not generate questions.",
+            "code": "format_error"
+        }), 502
 
     except Exception as e:
-
-        print("ERROR:", e)
-
         return jsonify({
-            "error": str(e)
+            "error": str(e),
+            "code": "server_error"
         }), 500
 
 # -----------------------------

@@ -282,6 +282,84 @@ console.log("--- Starting Frontend Simulation Tests ---");
     assert.strictEqual(chatHistory[1].content, "Think about CPU burst times.");
     console.log("✔ Test 8: AI Tutor chatbot sends context and receives guidance reply");
 
+    // Test 9: HTTP 429 does NOT automatically retry (single request only)
+    let fetchCount429 = 0;
+    global.fetch = async () => {
+        fetchCount429++;
+        return {
+            ok: false,
+            status: 429,
+            headers: { get: (h) => (h && h.toLowerCase() === "retry-after" ? "25" : "application/json") },
+            json: async () => ({ error: "AI model rate limit reached", code: "rate_limit_exceeded", retry_after: 25 })
+        };
+    };
+
+    await generateTest();
+    assert.strictEqual(fetchCount429, 1, "Expected exactly 1 fetch call on 429; no automatic retries allowed");
+    assert.strictEqual(qNumEl.textContent, "AI Model Cooldown");
+    console.log("✔ Test 9: HTTP 429 does not automatically trigger another frontend request");
+
+    // Test 10: 25-second and 60-second cooldown is respected (not capped to 10s)
+    assert(qTextEl.innerHTML.includes('Cooldown expires in <span id="cooldownSecDisplay">25</span>s'));
+
+    global.fetch = async () => ({
+        ok: false,
+        status: 429,
+        headers: { get: () => "application/json" },
+        json: async () => ({ error: "Rate limit reached", retry_after: 60 })
+    });
+    await generateTest();
+    assert(qTextEl.innerHTML.includes('Cooldown expires in <span id="cooldownSecDisplay">60</span>s'));
+    console.log("✔ Test 10: 25-second and 60-second cooldown values are fully respected without 10s capping");
+
+    // Test 11: Missing or malformed retry values have safe 5s fallbacks
+    const fallbackCases = [null, undefined, 0, -5, "invalid"];
+    for (const val of fallbackCases) {
+        global.fetch = async () => ({
+            ok: false,
+            status: 429,
+            headers: { get: () => "application/json" },
+            json: async () => ({ error: "Rate limit reached", retry_after: val })
+        });
+        await generateTest();
+        assert(qTextEl.innerHTML.includes('Cooldown expires in <span id="cooldownSecDisplay">5</span>s'), `Expected 5s fallback for retry_after: ${val}`);
+    }
+    console.log("✔ Test 11: Missing, zero, negative, and malformed retry values safely fall back to 5s");
+
+    // Test 12: Cooldown cleanup and explicit retry action
+    assert(global.isCooldownActive === true);
+    global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: async () => mockQuestions
+    });
+    await forceRetryGeneration();
+    assert(global.isCooldownActive === false);
+    assert.strictEqual(qNumEl.textContent, "Question 1 of 2");
+    console.log("✔ Test 12: Cooldown timer and state cleanly reset on explicit retry action");
+
+    // Test 13: UI recovery back to successful exam state after error
+    global.fetch = async () => ({
+        ok: false,
+        status: 500,
+        headers: { get: () => "application/json" },
+        json: async () => ({ error: "Temporary outage" })
+    });
+    await generateTest();
+    assert.strictEqual(qNumEl.textContent, "Generation Error");
+
+    global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: async () => mockQuestions
+    });
+    await generateTest();
+    assert.strictEqual(qNumEl.textContent, "Question 1 of 2");
+    assert.strictEqual(global.isCooldownActive, false);
+    console.log("✔ Test 13: UI recovers cleanly to active exam when generation succeeds");
+
     console.log("\nALL FRONTEND SIMULATION TESTS PASSED SUCCESSFULLY! 🚀");
     process.exit(0);
 })();

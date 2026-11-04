@@ -1,5 +1,8 @@
 let questions = [];
 let answers = [];
+let isGenerationInFlight = false;
+let cooldownInterval = null;
+let isCooldownActive = false;
 let currentQuestion = 0;
 let totalQuestions = 0;
 let questionState = [];
@@ -136,108 +139,241 @@ function normalizeGeneratedQuestions(rawQuestions) {
         .filter((q) => q.question && q.options.length >= 2 && q.answer);
 }
 
-async function generateTest() {
-    let topic = localStorage.getItem("topic");
-    let num = localStorage.getItem("num");
-    let difficulty = localStorage.getItem("difficulty");
-
-    if (!topic) {
-        topic = "Data Structures & Algorithms";
-        localStorage.setItem("topic", topic);
+function parseRetryAfterDelay(response, payload) {
+    let raw = null;
+    if (payload && payload.retry_after !== undefined && payload.retry_after !== null) {
+        raw = payload.retry_after;
+    } else if (response && response.headers && typeof response.headers.get === "function") {
+        raw = response.headers.get("Retry-After") || response.headers.get("retry-after");
     }
-    if (!num) {
-        num = "10";
-        localStorage.setItem("num", num);
+    if (raw !== null && raw !== undefined) {
+        const parsed = parseFloat(raw);
+        if (!isNaN(parsed) && parsed > 0) {
+            return Math.min(300, Math.ceil(parsed));
+        }
     }
-    if (!difficulty) {
-        difficulty = "medium";
-        localStorage.setItem("difficulty", difficulty);
+    return 5;
+}
+
+function clearCooldownTimer() {
+    if (cooldownInterval) {
+        clearInterval(cooldownInterval);
+        cooldownInterval = null;
     }
+    isCooldownActive = false;
+}
 
-    questions = [];
-    answers = [];
-    currentQuestion = 0;
-    totalQuestions = 0;
-    questionState = [];
+function forceRetryGeneration() {
+    clearCooldownTimer();
+    return generateTest();
+}
 
+function renderCooldownState(waitSec, errorMsg) {
+    clearCooldownTimer();
+    isCooldownActive = true;
+    isGenerationInFlight = false;
+
+    const questionNumberEl = document.getElementById("questionNumber");
     const questionTextEl = document.getElementById("questionText");
     const optionsContainer = document.getElementById("optionsContainer");
-    const questionNumberEl = document.getElementById("questionNumber");
-    
-    if (questionNumberEl) questionNumberEl.textContent = "Generating Test...";
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const submitBtn = document.getElementById("submitExamBtn");
+    const checkBtn = document.getElementById("checkAnswerBtn");
+
+    if (questionNumberEl) questionNumberEl.textContent = "AI Model Cooldown";
+    if (prevBtn) prevBtn.disabled = true;
+    if (nextBtn) nextBtn.disabled = true;
+    if (submitBtn) submitBtn.disabled = true;
+    if (checkBtn) checkBtn.disabled = true;
     if (optionsContainer) optionsContainer.innerHTML = "";
-    if (questionTextEl) {
-        questionTextEl.innerHTML = `
-            <div class="skeleton-shimmer-wrapper">
-                <div class="skeleton-line full"></div>
-                <div class="skeleton-line half mt-3"></div>
-                <div class="skeleton-line full mt-4"></div>
-                <div class="d-flex align-items-center gap-2 mt-4 text-primary">
-                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                    <span class="fw-semibold">ExamBuddy AI is preparing your questions...</span>
+
+    let remaining = waitSec;
+    const msg = errorMsg || "ExamBuddy AI rate limit reached. Please wait before retrying.";
+
+    function updateCooldownUI() {
+        if (!questionTextEl) return;
+        if (remaining > 0) {
+            questionTextEl.innerHTML = `
+                <div class="eb-generation-error text-center py-4">
+                    <div class="spinner-border text-warning mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+                    <h3 class="fw-bold text-warning mb-2">AI Model Cooldown Active</h3>
+                    <p class="text-muted mb-3">${escapeHtml(msg)}</p>
+                    <div class="badge bg-warning text-dark fs-6 px-3 py-2 mb-3">
+                        Cooldown expires in <span id="cooldownSecDisplay">${remaining}</span>s
+                    </div>
+                    <div class="d-flex gap-2 justify-content-center mt-2">
+                        <button id="explicitRetryBtn" class="btn btn-warning" onclick="forceRetryGeneration()">Retry Now</button>
+                        <a href="./" class="btn btn-outline-secondary">Back to Setup</a>
+                    </div>
                 </div>
-            </div>
-        `;
-    }
-
-    let lastError = "Unable to connect to the test generation engine.";
-    for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-            const response = await fetch("generate", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    topic: topic,
-                    num: parseInt(num, 10) || 10,
-                    difficulty: difficulty
-                })
-            });
-
-            let payload = null;
-            const contentType = response.headers.get("content-type") || "";
-            if (contentType.includes("application/json")) {
-                try {
-                    payload = await response.json();
-                } catch (jsonErr) {
-                    // Handled below
-                }
-            }
-
-            if (!response.ok) {
-                const errMsg = (payload && payload.error)
-                    ? payload.error
-                    : `Server returned HTTP ${response.status}: ${response.statusText || "Error"}`;
-                throw new Error(errMsg);
-            }
-
-            if (!payload) {
-                try {
-                    payload = await response.json();
-                } catch (parseErr) {
-                    throw new Error(`Invalid response format from server (HTTP ${response.status})`);
-                }
-            }
-
-            const normalized = normalizeGeneratedQuestions(payload);
-            if (normalized.length > 0) {
-                questions = normalized;
-                break;
-            }
-
-            throw new Error("No valid question items found in the model response.");
-        } catch (err) {
-            lastError = err.message || "Failed to generate questions.";
-            if (attempt < 2) {
-                await new Promise((r) => setTimeout(r, 800));
-            }
+            `;
+        } else {
+            questionTextEl.innerHTML = `
+                <div class="eb-generation-error text-center py-4">
+                    <div class="error-icon text-success mb-2" style="font-size: 2.5rem;">&#x2714;</div>
+                    <h3 class="fw-bold text-success mb-2">Cooldown Complete</h3>
+                    <p class="text-muted mb-3">Rate limit window has reset. You can now retry question generation.</p>
+                    <div class="d-flex gap-2 justify-content-center">
+                        <button class="btn btn-primary" onclick="forceRetryGeneration()">Retry Generation</button>
+                        <a href="./" class="btn btn-outline-secondary">Back to Setup</a>
+                    </div>
+                </div>
+            `;
         }
     }
 
-    totalQuestions = questions.length;
-    if (totalQuestions === 0) {
-        renderGenerationError(lastError);
-        return;
-    }
+    updateCooldownUI();
+
+    cooldownInterval = setInterval(() => {
+        remaining--;
+        const display = document.getElementById("cooldownSecDisplay");
+        if (display) {
+            display.textContent = String(Math.max(0, remaining));
+        }
+        if (remaining <= 0) {
+            clearCooldownTimer();
+            updateCooldownUI();
+        }
+    }, 1000);
+}
+
+async function generateTest() {
+    if (isGenerationInFlight) return;
+    clearCooldownTimer();
+    isGenerationInFlight = true;
+
+    try {
+        let topic = localStorage.getItem("topic");
+        let num = localStorage.getItem("num");
+        let difficulty = localStorage.getItem("difficulty");
+
+        if (!topic) {
+            topic = "Data Structures & Algorithms";
+            localStorage.setItem("topic", topic);
+        }
+        if (!num) {
+            num = "10";
+            localStorage.setItem("num", num);
+        }
+        if (!difficulty) {
+            difficulty = "medium";
+            localStorage.setItem("difficulty", difficulty);
+        }
+
+        questions = [];
+        answers = [];
+        currentQuestion = 0;
+        totalQuestions = 0;
+        questionState = [];
+
+        const questionTextEl = document.getElementById("questionText");
+        const optionsContainer = document.getElementById("optionsContainer");
+        const questionNumberEl = document.getElementById("questionNumber");
+        
+        if (questionNumberEl) questionNumberEl.textContent = "Generating Test...";
+        if (optionsContainer) optionsContainer.innerHTML = "";
+        if (questionTextEl) {
+            questionTextEl.innerHTML = `
+                <div class="skeleton-shimmer-wrapper">
+                    <div class="skeleton-line full"></div>
+                    <div class="skeleton-line half mt-3"></div>
+                    <div class="skeleton-line full mt-4"></div>
+                    <div class="d-flex align-items-center gap-2 mt-4 text-primary">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span class="fw-semibold">ExamBuddy AI is preparing your questions...</span>
+                    </div>
+                </div>
+            `;
+        }
+
+        let lastError = "Unable to connect to the test generation engine.";
+        for (let attempt = 1; attempt <= 2; attempt++) {
+            let controller = null;
+            let timeoutId = null;
+            try {
+                if (typeof AbortController !== "undefined") {
+                    controller = new AbortController();
+                    timeoutId = setTimeout(() => controller.abort(), 45000);
+                }
+
+                const fetchOpts = {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        topic: topic,
+                        num: parseInt(num, 10) || 10,
+                        difficulty: difficulty
+                    })
+                };
+                if (controller) {
+                    fetchOpts.signal = controller.signal;
+                }
+
+                const response = await fetch("generate", fetchOpts);
+                if (timeoutId) clearTimeout(timeoutId);
+
+                let payload = null;
+                const contentType = response.headers.get("content-type") || "";
+                if (contentType.includes("application/json")) {
+                    try {
+                        payload = await response.json();
+                    } catch (jsonErr) {
+                        // Handled below
+                    }
+                }
+
+                if (!response.ok) {
+                    // Explicit HTTP 429 handling: Do NOT automatically retry; display cooldown UI
+                    if (response.status === 429) {
+                        const waitSec = parseRetryAfterDelay(response, payload);
+                        const errMsg = (payload && payload.error)
+                            ? payload.error
+                            : "ExamBuddy AI rate limit reached. Please wait before retrying.";
+                        renderCooldownState(waitSec, errMsg);
+                        return;
+                    }
+
+                    const errMsg = (payload && payload.error)
+                        ? payload.error
+                        : `Server returned HTTP ${response.status}: ${response.statusText || "Error"}`;
+                    throw new Error(errMsg);
+                }
+
+                if (!payload) {
+                    try {
+                        payload = await response.json();
+                    } catch (parseErr) {
+                        throw new Error(`Invalid response format from server (HTTP ${response.status})`);
+                    }
+                }
+
+                const normalized = normalizeGeneratedQuestions(payload);
+                if (normalized.length > 0) {
+                    questions = normalized;
+                    break;
+                }
+
+                throw new Error("No valid question items found in the model response.");
+            } catch (err) {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (err.name === "AbortError") {
+                    lastError = "Request timed out after 45 seconds. The AI service took too long to respond.";
+                } else {
+                    lastError = err.message || "Failed to generate questions.";
+                }
+
+                if (attempt < 2) {
+                    await new Promise((r) => setTimeout(r, 1500));
+                }
+            }
+        }
+
+        totalQuestions = questions.length;
+        if (totalQuestions === 0) {
+            renderGenerationError(lastError);
+            return;
+        }
 
     // Allocate time based on question count (1.5 minutes per question, min 10 min, max 45 min)
     const minutesAllowed = Math.max(10, Math.min(45, Math.round(totalQuestions * 1.5)));
@@ -260,9 +396,14 @@ async function generateTest() {
     buildNavigator();
     showQuestion();
     updateAnswered();
+    } finally {
+        isGenerationInFlight = false;
+    }
 }
 
 function renderGenerationError(errorMessage) {
+    clearCooldownTimer();
+    isGenerationInFlight = false;
     const questionTextEl = document.getElementById("questionText");
     const questionNumberEl = document.getElementById("questionNumber");
     const prevBtn = document.getElementById("prevBtn");
