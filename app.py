@@ -24,7 +24,7 @@ socket.getaddrinfo = _patched_getaddrinfo
 
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
-DEFAULT_GROQ_TIMEOUT = 16.0
+DEFAULT_GROQ_TIMEOUT = 45.0
 
 
 class GroqAPIError(RuntimeError):
@@ -159,9 +159,9 @@ import re
 
 load_dotenv()
 
-from config import GROQ_API_KEY, MODEL_NAME
+from config import GROQ_API_KEY, MODEL_NAME, FALLBACK_MODEL_NAME
 
-DEFAULT_GROQ_TIMEOUT = 16.0
+DEFAULT_GROQ_TIMEOUT = 45.0
 
 # -----------------------------
 # FLASK APP
@@ -529,9 +529,10 @@ def generate():
             if attempt > 0:
                 prompt += "\nPrevious output was invalid. Return strict valid JSON only."
 
+            current_model = MODEL_NAME if attempt == 0 else FALLBACK_MODEL_NAME
             try:
                 completion = client.chat.completions.create(
-                    model=MODEL_NAME,
+                    model=current_model,
                     messages=[{"role": "user", "content": prompt}],
                     temperature=0.2
                 )
@@ -690,11 +691,21 @@ def chat():
         messages.extend(safe_history)
         messages.append({"role": "user", "content": question})
 
-        completion = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=messages,
-            temperature=0.2
-        )
+        try:
+            completion = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=messages,
+                temperature=0.2
+            )
+        except Exception as e:
+            if is_rate_limit_error(e) and FALLBACK_MODEL_NAME != MODEL_NAME:
+                completion = client.chat.completions.create(
+                    model=FALLBACK_MODEL_NAME,
+                    messages=messages,
+                    temperature=0.2
+                )
+            else:
+                raise
 
         reply = completion.choices[0].message.content
         return jsonify({"reply": reply})

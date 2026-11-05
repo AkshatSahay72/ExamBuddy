@@ -294,7 +294,7 @@ async function generateTest() {
             try {
                 if (typeof AbortController !== "undefined") {
                     controller = new AbortController();
-                    timeoutId = setTimeout(() => controller.abort(), 45000);
+                    timeoutId = setTimeout(() => controller.abort(), 70000);
                 }
 
                 const fetchOpts = {
